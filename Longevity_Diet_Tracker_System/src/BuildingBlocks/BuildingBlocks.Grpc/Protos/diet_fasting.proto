@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+option csharp_namespace = "BuildingBlocks.Grpc.Protos";
+
+package diet_fasting;
+
+service DietFastingGrpc {
+  rpc GetUserFastingSummary (UserFastingSummaryRequest) returns (UserFastingSummaryResponse);
+  rpc GetUserNutritionSummary (UserNutritionSummaryRequest) returns (UserNutritionSummaryResponse);
+  rpc GetActiveFmdCycle (ActiveFmdCycleRequest) returns (ActiveFmdCycleResponse);
+}
+
+message UserFastingSummaryRequest {
+  string user_id = 1;
+}
+
+message UserFastingSummaryResponse {
+  string user_id = 1;
+  bool is_currently_fasting = 2;
+  string current_fasting_type = 3;
+  string start_time_utc = 4;
+  string target_end_time_utc = 5;
+  int32 total_completed_fasts = 6;
+  double total_fasted_hours = 7;
+}
+
+message UserNutritionSummaryRequest {
+  string user_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+}
+
+message UserNutritionSummaryResponse {
+  string user_id = 1;
+  double average_calories = 2;
+  double average_protein = 3;
+  double average_carbs = 4;
+  double average_fat = 5;
+  int32 total_logged_meals = 6;
+}
+
+message ActiveFmdCycleRequest {
+  string user_id = 1;
+}
+
+message ActiveFmdCycleResponse {
+  bool has_active_cycle = 1;
+  string fmd_cycle_id = 2;
+  int32 cycle_number = 3;
+  int32 current_day = 4;
+  string status = 5;
+}
+

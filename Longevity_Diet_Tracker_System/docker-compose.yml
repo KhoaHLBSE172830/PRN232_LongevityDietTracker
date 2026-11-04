@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database server hosting databases for all microservices
+  postgres:
+    image: postgres:16-alpine
+    container_name: longevity_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_MULTIPLE_DATABASES: identity_db,diet_db,consultation_db,notification_db,job_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+    networks:
+      - longevity_network
+
+  # Redis Distributed Cache
+  redis:
+    image: redis:7-alpine
+    container_name: longevity_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - longevity_network
+
+  # RabbitMQ Message Broker with Management UI
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: longevity_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"     # AMQP protocol
+      - "15672:15672"   # Management Web UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - longevity_network
+
+  # Mailpit (SMTP Server & Web UI for Email testing)
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: longevity_mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP port
+      - "8025:8025"   # Web UI port
+    networks:
+      - longevity_network
+
+networks:
+  longevity_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+
