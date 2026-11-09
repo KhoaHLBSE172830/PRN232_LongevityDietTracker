@@ -51,20 +51,22 @@ Toàn bộ Backend được xây dựng theo kiến trúc **Microservices** hư�
    - Tích hợp OAuth 2.0 với **Google Authentication**.
    - Database: `Identity DB` (PostgreSQL).
 3. **Diet & Fasting Service [.NET 8, Onion]**:
-   - Core domain: Nhật ký ăn uống (`MealLog`, `MealFoodItem`), chế độ nhịn ăn (`FastingSession`), chu kỳ FMD 5 ngày (`FmdCycle`), mẫu thực đơn Blue Zones (`MealTemplate`).
-   - Kết nối **Nutrition API** tra cứu Macro thực phẩm, kết hợp **Redis Cache** để lưu đệm dữ liệu dinh dưỡng.
+   - Core domain: Nhật ký ăn uống chuẩn Blue Zones (`MealLog`, `MealFoodItem` hỗ trợ `FiberGrams`, `IsHaraHachiBuCompliant`), chế độ nhịn ăn (`FastingSession`), chu kỳ FMD 5 ngày (`FmdCycle`), quy tắc FMD (`FmdRule`), mẫu thực đơn Blue Zones (`MealTemplate`).
+   - Kiểm tra bất biến FMD (Invariant 4.1): Tự động phát hiện vi phạm calo Ngày 1 (1.100 kcal) và Ngày 2-5 (725 kcal), bật cờ `ExceededThreshold` và publish `FmdCycleAlertIntegrationEvent` sang RabbitMQ.
+   - Quản trị Master Data cho Admin: Quản lý FMD Rules và Blue Zones Meal Templates (`/api/admin/fmd-rules`, `/api/mealtemplates`).
+   - Kết nối **Nutrition API** tra cứu Macro & Chất xơ, lưu đệm **Redis Cache** theo key chuẩn hóa `nutrition:food:{normalized_name}`.
    - Cung cấp **gRPC Server** phục vụ cho `Consultation Service` truy vấn tổng hợp tiến độ dinh dưỡng/nhịn ăn của người dùng với hiệu năng cao.
-   - Publish sự kiện nhịn ăn/bữa ăn vào **RabbitMQ** và Consume các trigger nhắc nhở.
-   - Database: `Diet DB` (PostgreSQL).
+   - Database: `diet_db` (PostgreSQL) theo chuẩn `snake_case`.
 4. **Consultation Service [.NET 8, Onion]**:
    - Quản lý hồ sơ chuyên gia (`NutritionistProfile`), các buổi tư vấn (`ConsultationSession`), phiếu lời khuyên (`AdviceNote`).
    - Gọi sang `Diet & Fasting Service` qua giao thức **gRPC** để review tiến độ dinh dưỡng/nhịn ăn của người dùng.
    - Publish sự kiện `AdviceSentIntegrationEvent` vào **RabbitMQ** để gửi thông báo cho khách hàng.
-   - Database: `Consultation DB` (PostgreSQL).
+   - Database: `consultation_db` (PostgreSQL) theo chuẩn `snake_case`.
 5. **Notification Service [.NET 8, Onion]**:
-   - Lắng nghe (Consume) các Event từ **RabbitMQ** (nhắc nhở nhịn ăn, cảnh báo FMD, lời khuyên từ chuyên gia).
+   - `RabbitMqNotificationConsumer` (`BackgroundService`): Lắng nghe các Event từ **RabbitMQ** (`SendEmailNotificationIntegrationEvent`, `AdviceSentIntegrationEvent`, `FmdCycleAlertIntegrationEvent`).
+   - Đảm bảo tính **Idempotency** (Warning 5): Kiểm tra `EventId` trước khi dispatch để loại trừ hoàn toàn việc gửi trùng email/thông báo.
    - Gửi email thông báo qua giao thức **SMTP** tới **Email Service** (hỗ trợ Mailpit cho Local Dev).
-   - Database: `Notification DB` (PostgreSQL) lưu lịch sử gửi và tùy chọn thông báo của người dùng.
+   - Database: `notification_db` (PostgreSQL) theo chuẩn `snake_case` lưu lịch sử gửi và tùy chọn thông báo của người dùng.
 6. **Job Service [Hangfire]**:
    - Quản lý các background job định kỳ (Scheduled Jobs): kiểm tra khung giờ nhịn ăn, kiểm tra ngày của chu kỳ FMD, tổng kết dinh dưỡng tuần.
    - Publish các event trigger vào **RabbitMQ**.

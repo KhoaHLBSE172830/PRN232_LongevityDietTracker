@@ -7,7 +7,8 @@ public record SendNotificationRequest(
     string Recipient,
     string Subject,
     string Body,
-    NotificationChannel Channel = NotificationChannel.Email);
+    NotificationChannel Channel = NotificationChannel.Email,
+    string? EventId = null);
 
 public record NotificationLogResponse(
     Guid Id,
@@ -19,6 +20,7 @@ public record NotificationLogResponse(
     NotificationStatus Status,
     DateTime? SentAtUtc,
     string? ErrorMessage,
+    string? EventId,
     DateTime? CreatedAt);
 
 public record NotificationPreferenceDto(

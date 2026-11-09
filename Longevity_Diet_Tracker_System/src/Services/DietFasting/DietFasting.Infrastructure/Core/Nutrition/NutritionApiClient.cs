@@ -22,15 +22,18 @@ public class NutritionApiClient : INutritionService
 
     public async Task<List<FoodItemDto>> SearchFoodItemsAsync(string query)
     {
-        var cacheKey = $"nutrition:search:{query.ToLowerInvariant().Trim()}";
+        // AGENT.md 4.2: Standardized cache key: nutrition:food:{normalized_name}
+        var normalized = query.Trim().ToLowerInvariant().Replace(" ", "_");
+        var cacheKey = $"nutrition:food:{normalized}";
         var cached = await _cacheService.GetAsync<List<FoodItemDto>>(cacheKey);
         if (cached != null) return cached;
 
         await Task.Yield();
+        // Blue Zones Plant Slant items with rich dietary fiber
         var mockResults = new List<FoodItemDto>
         {
-            new("food-001", $"{query} (Standard Serving)", 100, "g", 150, 5, 25, 3),
-            new("food-002", $"{query} (Organic Whole)", 150, "g", 210, 8, 30, 4)
+            new("food-001", $"{query} (Blue Zones Whole & Plant Slant)", 100, "g", 145, 7.5, 22.0, 2.5, FiberGrams: 8.5),
+            new("food-002", $"{query} (Steamed Legume & Vegetable Mix)", 150, "g", 195, 9.0, 28.0, 3.5, FiberGrams: 11.0)
         };
 
         await _cacheService.SetAsync(cacheKey, mockResults, TimeSpan.FromHours(24));
@@ -39,14 +42,13 @@ public class NutritionApiClient : INutritionService
 
     public async Task<FoodItemDto> GetFoodDetailsAsync(string externalFoodId)
     {
-        var cacheKey = $"nutrition:item:{externalFoodId}";
+        var cacheKey = $"nutrition:food:{externalFoodId}";
         var cached = await _cacheService.GetAsync<FoodItemDto>(cacheKey);
         if (cached != null) return cached;
 
         await Task.Yield();
-        var details = new FoodItemDto(externalFoodId, "Nutrient Dense Blue Zones Food", 100, "g", 120, 6, 18, 2);
+        var details = new FoodItemDto(externalFoodId, "Nutrient Dense Blue Zones Centenarian Food", 100, "g", 130, 8, 20, 2, FiberGrams: 9.0);
         await _cacheService.SetAsync(cacheKey, details, TimeSpan.FromDays(7));
         return details;
     }
 }
-

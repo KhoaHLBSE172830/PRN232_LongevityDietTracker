@@ -1,10 +1,12 @@
 using BuildingBlocks.Common.ResponseCode;
 using DietFasting.Application.DTOs;
 using DietFasting.Application.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DietFasting.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class MealsController : ControllerBase
@@ -20,7 +22,7 @@ public class MealsController : ControllerBase
     public async Task<IActionResult> LogMeal([FromBody] CreateMealLogDto dto)
     {
         var result = await _mealService.LogMealAsync(dto);
-        return SuccessResp.Created(result, "Meal logged successfully");
+        return SuccessResp.Created(result, "Meal logged successfully (Blue Zones compliant)");
     }
 
     [HttpGet("user/{userId:guid}")]
@@ -32,6 +34,7 @@ public class MealsController : ControllerBase
     }
 }
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class FastingController : ControllerBase
@@ -65,6 +68,7 @@ public class FastingController : ControllerBase
     }
 }
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class FmdController : ControllerBase
@@ -80,7 +84,7 @@ public class FmdController : ControllerBase
     public async Task<IActionResult> StartCycle([FromBody] StartFmdCycleDto dto)
     {
         var result = await _fmdService.StartCycleAsync(dto);
-        return SuccessResp.Created(result, "FMD 5-day cycle started successfully");
+        return SuccessResp.Created(result, "5-day Fasting Mimicking Diet (FMD) cycle started successfully");
     }
 
     [HttpGet("user/{userId:guid}/active")]
@@ -91,6 +95,7 @@ public class FmdController : ControllerBase
     }
 }
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class NutritionController : ControllerBase
@@ -103,12 +108,79 @@ public class NutritionController : ControllerBase
     }
 
     [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] string q)
+    public async Task<IActionResult> Search([FromQuery] string query)
     {
-        if (string.IsNullOrWhiteSpace(q))
-            return ErrorResp.BadRequest("Search query cannot be empty");
+        var results = await _nutritionService.SearchFoodItemsAsync(query);
+        return SuccessResp.Ok(results);
+    }
 
-        var result = await _nutritionService.SearchFoodItemsAsync(q);
-        return SuccessResp.Ok(result);
+    [HttpGet("details/{externalFoodId}")]
+    public async Task<IActionResult> Details(string externalFoodId)
+    {
+        var item = await _nutritionService.GetFoodDetailsAsync(externalFoodId);
+        return SuccessResp.Ok(item);
+    }
+}
+
+// C0 Context & AGENT.md: Admin manages FMD rules & Meal Templates
+[Authorize(Roles = "Admin")]
+[ApiController]
+[Route("api/admin/fmd-rules")]
+public class FmdRulesController : ControllerBase
+{
+    private readonly IFmdRuleService _fmdRuleService;
+
+    public FmdRulesController(IFmdRuleService fmdRuleService)
+    {
+        _fmdRuleService = fmdRuleService;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAllRules()
+    {
+        var rules = await _fmdRuleService.GetAllRulesAsync();
+        return SuccessResp.Ok(rules);
+    }
+
+    [HttpPut("{dayNumber:int}")]
+    public async Task<IActionResult> UpdateRule(int dayNumber, [FromBody] UpdateFmdRuleRequest request)
+    {
+        var rule = await _fmdRuleService.UpdateRuleAsync(dayNumber, request);
+        return SuccessResp.Ok(rule, $"FMD Rule for Day {dayNumber} updated successfully");
+    }
+}
+
+[Authorize]
+[ApiController]
+[Route("api/[controller]")]
+public class MealTemplatesController : ControllerBase
+{
+    private readonly IMealTemplateService _templateService;
+
+    public MealTemplatesController(IMealTemplateService templateService)
+    {
+        _templateService = templateService;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAllTemplates()
+    {
+        var templates = await _templateService.GetAllTemplatesAsync();
+        return SuccessResp.Ok(templates);
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var template = await _templateService.GetTemplateByIdAsync(id);
+        return SuccessResp.Ok(template);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost]
+    public async Task<IActionResult> CreateTemplate([FromBody] CreateMealTemplateRequest request)
+    {
+        var created = await _templateService.CreateTemplateAsync(request);
+        return SuccessResp.Created(created, "Blue Zones meal template created successfully");
     }
 }

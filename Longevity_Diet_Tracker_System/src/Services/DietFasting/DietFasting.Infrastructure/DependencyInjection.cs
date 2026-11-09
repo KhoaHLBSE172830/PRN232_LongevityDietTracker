@@ -23,7 +23,8 @@ public static class DependencyInjection
 
         services.AddDbContext<DietDbContext>(options =>
         {
-            options.UseNpgsql(connectionString);
+            // AGENT.md 3.2: Use snake_case naming convention for tables, columns, indexes
+            options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
         });
 
         // Repositories & Unit of Work
@@ -31,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<IMealLogRepository, MealLogRepository>();
         services.AddScoped<IFastingSessionRepository, FastingSessionRepository>();
         services.AddScoped<IFmdCycleRepository, FmdCycleRepository>();
+        services.AddScoped<IFmdRuleRepository, FmdRuleRepository>();
+        services.AddScoped<IMealTemplateRepository, MealTemplateRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Redis Cache
@@ -52,4 +55,3 @@ public static class DependencyInjection
         return services;
     }
 }
-

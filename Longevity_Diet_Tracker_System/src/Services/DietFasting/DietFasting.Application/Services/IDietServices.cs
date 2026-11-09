@@ -34,3 +34,15 @@ public interface IRedisCacheService
     Task RemoveAsync(string key);
 }
 
+public interface IFmdRuleService
+{
+    Task<List<FmdRuleDto>> GetAllRulesAsync();
+    Task<FmdRuleDto> UpdateRuleAsync(int dayNumber, UpdateFmdRuleRequest request);
+}
+
+public interface IMealTemplateService
+{
+    Task<List<MealTemplateDto>> GetAllTemplatesAsync();
+    Task<MealTemplateDto> CreateTemplateAsync(CreateMealTemplateRequest request);
+    Task<MealTemplateDto> GetTemplateByIdAsync(Guid id);
+}

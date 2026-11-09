@@ -6,7 +6,7 @@ namespace DietFasting.Application.Repositories;
 public interface IMealLogRepository : IGenericRepository<MealLog>
 {
     Task<List<MealLog>> GetUserMealsByDateAsync(Guid userId, DateTime date);
-    Task<MealLog?> GetWithItemsAsync(Guid mealLogId);
+    Task<double> GetUserTotalCaloriesForDateAsync(Guid userId, DateTime date);
 }
 
 public interface IFastingSessionRepository : IGenericRepository<FastingSession>
@@ -21,3 +21,13 @@ public interface IFmdCycleRepository : IGenericRepository<FmdCycle>
     Task<int> GetCycleCountAsync(Guid userId);
 }
 
+public interface IFmdRuleRepository : IGenericRepository<FmdRule>
+{
+    Task<FmdRule?> GetRuleByDayAsync(int dayNumber);
+    Task<List<FmdRule>> GetAllRulesAsync();
+}
+
+public interface IMealTemplateRepository : IGenericRepository<MealTemplate>
+{
+    Task<List<MealTemplate>> GetTemplatesAsync(bool adminOnly = false);
+}

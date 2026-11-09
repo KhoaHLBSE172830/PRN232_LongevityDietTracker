@@ -12,26 +12,35 @@ namespace DietFasting.Application.Services;
 public class MealService : IMealService
 {
     private readonly IMealLogRepository _mealRepository;
+    private readonly IFmdCycleRepository _fmdRepository;
+    private readonly IFmdRuleRepository _fmdRuleRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEventBus? _eventBus;
 
-    public MealService(IMealLogRepository mealRepository, IUnitOfWork unitOfWork, IEventBus? eventBus = null)
+    public MealService(
+        IMealLogRepository mealRepository,
+        IFmdCycleRepository fmdRepository,
+        IFmdRuleRepository fmdRuleRepository,
+        IUnitOfWork unitOfWork,
+        IEventBus? eventBus = null)
     {
         _mealRepository = mealRepository;
+        _fmdRepository = fmdRepository;
+        _fmdRuleRepository = fmdRuleRepository;
         _unitOfWork = unitOfWork;
         _eventBus = eventBus;
     }
 
     public async Task<MealLogResponseDto> LogMealAsync(CreateMealLogDto dto)
     {
-        var mealLog = new MealLog(dto.UserId, dto.MealType, dto.LoggedAt)
+        var mealLog = new MealLog(dto.UserId, dto.MealType, dto.LoggedAt, dto.IsHaraHachiBuCompliant, dto.SatietyPercentage)
         {
             Notes = dto.Notes
         };
 
         foreach (var item in dto.FoodItems)
         {
-            mealLog.FoodItems.Add(new MealFoodItem
+            mealLog.AddFoodItem(new MealFoodItem
             {
                 ExternalFoodId = item.ExternalFoodId,
                 FoodName = item.FoodName,
@@ -40,11 +49,33 @@ public class MealService : IMealService
                 Calories = item.Calories,
                 ProteinGrams = item.ProteinGrams,
                 CarbsGrams = item.CarbsGrams,
-                FatGrams = item.FatGrams
+                FatGrams = item.FatGrams,
+                FiberGrams = item.FiberGrams
             });
         }
 
-        mealLog.RecalculateTotals();
+        // AGENT.md Invariant 4.1: Fasting Mimicking Diet (FMD) Threshold Check
+        var activeFmd = await _fmdRepository.GetActiveCycleAsync(dto.UserId);
+        if (activeFmd != null)
+        {
+            var dayCaloriesAlready = await _mealRepository.GetUserTotalCaloriesForDateAsync(dto.UserId, dto.LoggedAt.Date);
+            var projectedTotal = dayCaloriesAlready + mealLog.TotalCalories;
+
+            var rule = await _fmdRuleRepository.GetRuleByDayAsync(activeFmd.CurrentDay);
+            var thresholdLimit = rule?.MaxCalories ?? (activeFmd.CurrentDay == 1 ? 1100 : 725);
+
+            if (projectedTotal > thresholdLimit)
+            {
+                var reason = $"Day {activeFmd.CurrentDay} FMD Calorie Limit Exceeded! Projected: {projectedTotal:F0} kcal vs Threshold: {thresholdLimit:F0} kcal.";
+                mealLog.MarkThresholdExceeded(reason);
+
+                if (_eventBus != null)
+                {
+                    await _eventBus.PublishAsync(new FmdCycleAlertIntegrationEvent(
+                        activeFmd.Id, activeFmd.UserId, activeFmd.CurrentDay, reason));
+                }
+            }
+        }
 
         await _mealRepository.CreateAsync(mealLog);
         await _unitOfWork.SaveChangesAsync();
@@ -55,27 +86,26 @@ public class MealService : IMealService
                 mealLog.Id, mealLog.UserId, mealLog.MealType.ToString(), mealLog.TotalCalories, mealLog.LoggedAt));
         }
 
-        return new MealLogResponseDto(
-            mealLog.Id, mealLog.UserId, mealLog.MealType, mealLog.LoggedAt,
-            mealLog.TotalCalories, mealLog.TotalProteinGrams, mealLog.TotalCarbsGrams, mealLog.TotalFatGrams,
-            mealLog.Notes,
-            mealLog.FoodItems.Select(f => new FoodItemDto(
-                f.ExternalFoodId, f.FoodName, f.ServingSize, f.ServingUnit,
-                f.Calories, f.ProteinGrams, f.CarbsGrams, f.FatGrams)).ToList());
+        return MapToDto(mealLog);
     }
 
     public async Task<List<MealLogResponseDto>> GetUserMealsAsync(Guid userId, DateTime date)
     {
         var logs = await _mealRepository.GetUserMealsByDateAsync(userId, date);
+        return logs.Select(MapToDto).ToList();
+    }
 
-        return logs.Select(m => new MealLogResponseDto(
+    private static MealLogResponseDto MapToDto(MealLog m)
+    {
+        return new MealLogResponseDto(
             m.Id, m.UserId, m.MealType, m.LoggedAt,
-            m.TotalCalories, m.TotalProteinGrams, m.TotalCarbsGrams, m.TotalFatGrams,
+            m.TotalCalories, m.TotalProteinGrams, m.TotalCarbsGrams, m.TotalFatGrams, m.TotalFiberGrams,
+            m.IsHaraHachiBuCompliant, m.SatietyPercentage,
+            m.ExceededThreshold, m.ThresholdViolationNotes,
             m.Notes,
             m.FoodItems.Select(f => new FoodItemDto(
                 f.ExternalFoodId, f.FoodName, f.ServingSize, f.ServingUnit,
-                f.Calories, f.ProteinGrams, f.CarbsGrams, f.FatGrams)).ToList()
-        )).ToList();
+                f.Calories, f.ProteinGrams, f.CarbsGrams, f.FatGrams, f.FiberGrams)).ToList());
     }
 }
 
@@ -98,15 +128,7 @@ public class FastingService : IFastingService
         if (active != null)
             throw new ActiveFastingSessionAlreadyExistsException(dto.UserId);
 
-        var targetEndTime = dto.StartTimeUtc.AddHours(dto.DurationHours);
-        var session = new FastingSession
-        {
-            UserId = dto.UserId,
-            FastingType = dto.FastingType,
-            StartTimeUtc = dto.StartTimeUtc,
-            TargetEndTimeUtc = targetEndTime,
-            Status = FastingStatus.InProgress
-        };
+        var session = FastingSession.Create(dto.UserId, dto.FastingType, dto.StartTimeUtc, dto.DurationHours);
 
         await _fastingRepository.CreateAsync(session);
         await _unitOfWork.SaveChangesAsync();
@@ -128,9 +150,7 @@ public class FastingService : IFastingService
         if (session == null)
             throw new FastingSessionNotFoundException(sessionId);
 
-        session.Status = FastingStatus.Completed;
-        session.ActualEndTimeUtc = DateTime.UtcNow;
-        session.UpdatedAt = DateTime.UtcNow;
+        session.Complete(DateTime.UtcNow);
 
         await _fastingRepository.UpdateAsync(session);
         await _unitOfWork.SaveChangesAsync();
@@ -139,12 +159,12 @@ public class FastingService : IFastingService
         {
             await _eventBus.PublishAsync(new FastingCompletedIntegrationEvent(
                 session.Id, session.UserId, session.FastingType.ToString(),
-                session.StartTimeUtc, session.ActualEndTimeUtc.Value, session.ActualFastedHours ?? 0));
+                session.StartTimeUtc, session.ActualEndTimeUtc!.Value, session.ActualFastedHours ?? 0));
         }
 
         return new FastingSessionResponseDto(
             session.Id, session.UserId, session.FastingType, session.StartTimeUtc,
-            session.TargetEndTimeUtc, session.ActualEndTimeUtc, session.Status, session.ActualFastedHours);
+            session.TargetEndTimeUtc, session.ActualEndTimeUtc, session.Status, session.ActualFastedHours, session.MoodNotes);
     }
 
     public async Task<FastingSessionResponseDto?> GetActiveFastingSessionAsync(Guid userId)
@@ -154,18 +174,20 @@ public class FastingService : IFastingService
 
         return new FastingSessionResponseDto(
             session.Id, session.UserId, session.FastingType, session.StartTimeUtc,
-            session.TargetEndTimeUtc, session.ActualEndTimeUtc, session.Status, session.ActualFastedHours);
+            session.TargetEndTimeUtc, session.ActualEndTimeUtc, session.Status, session.ActualFastedHours, session.MoodNotes);
     }
 }
 
 public class FmdService : IFmdService
 {
     private readonly IFmdCycleRepository _fmdRepository;
+    private readonly IFmdRuleRepository _fmdRuleRepository;
     private readonly IUnitOfWork _unitOfWork;
 
-    public FmdService(IFmdCycleRepository fmdRepository, IUnitOfWork unitOfWork)
+    public FmdService(IFmdCycleRepository fmdRepository, IFmdRuleRepository fmdRuleRepository, IUnitOfWork unitOfWork)
     {
         _fmdRepository = fmdRepository;
+        _fmdRuleRepository = fmdRuleRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -176,21 +198,16 @@ public class FmdService : IFmdService
             throw new ActiveFmdCycleAlreadyExistsException(dto.UserId);
 
         var count = await _fmdRepository.GetCycleCountAsync(dto.UserId);
-        var cycle = new FmdCycle
-        {
-            UserId = dto.UserId,
-            CycleNumber = count + 1,
-            StartDate = dto.StartDate,
-            EndDate = dto.StartDate.AddDays(5),
-            CurrentDay = 1,
-            Status = FmdStatus.Active
-        };
+        var cycle = FmdCycle.Create(dto.UserId, count + 1, dto.StartDate);
 
         await _fmdRepository.CreateAsync(cycle);
         await _unitOfWork.SaveChangesAsync();
 
+        var rule = await _fmdRuleRepository.GetRuleByDayAsync(1);
+        var targetCal = rule?.MaxCalories ?? 1100;
+
         return new FmdCycleResponseDto(
-            cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status);
+            cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status, targetCal);
     }
 
     public async Task<FmdCycleResponseDto?> GetActiveCycleAsync(Guid userId)
@@ -198,8 +215,107 @@ public class FmdService : IFmdService
         var cycle = await _fmdRepository.GetActiveCycleAsync(userId);
         if (cycle == null) return null;
 
+        var rule = await _fmdRuleRepository.GetRuleByDayAsync(cycle.CurrentDay);
+        var targetCal = rule?.MaxCalories ?? (cycle.CurrentDay == 1 ? 1100 : 725);
+
         return new FmdCycleResponseDto(
-            cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status);
+            cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status, targetCal);
     }
 }
 
+public class FmdRuleService : IFmdRuleService
+{
+    private readonly IFmdRuleRepository _ruleRepository;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public FmdRuleService(IFmdRuleRepository ruleRepository, IUnitOfWork unitOfWork)
+    {
+        _ruleRepository = ruleRepository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<List<FmdRuleDto>> GetAllRulesAsync()
+    {
+        var rules = await _ruleRepository.GetAllRulesAsync();
+        return rules.Select(r => new FmdRuleDto(
+            r.Id, r.DayNumber, r.MaxCalories, r.TargetProteinPercent, r.TargetFatPercent, r.TargetCarbPercent, r.Description)).ToList();
+    }
+
+    public async Task<FmdRuleDto> UpdateRuleAsync(int dayNumber, UpdateFmdRuleRequest request)
+    {
+        var rule = await _ruleRepository.GetRuleByDayAsync(dayNumber);
+        if (rule == null)
+        {
+            rule = new FmdRule(dayNumber, request.MaxCalories, request.TargetProteinPercent, request.TargetFatPercent, request.TargetCarbPercent, request.Description);
+            await _ruleRepository.CreateAsync(rule);
+        }
+        else
+        {
+            rule.UpdateRule(request.MaxCalories, request.TargetProteinPercent, request.TargetFatPercent, request.TargetCarbPercent, request.Description);
+            await _ruleRepository.UpdateAsync(rule);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        return new FmdRuleDto(
+            rule.Id, rule.DayNumber, rule.MaxCalories, rule.TargetProteinPercent, rule.TargetFatPercent, rule.TargetCarbPercent, rule.Description);
+    }
+}
+
+public class MealTemplateService : IMealTemplateService
+{
+    private readonly IMealTemplateRepository _templateRepository;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public MealTemplateService(IMealTemplateRepository templateRepository, IUnitOfWork unitOfWork)
+    {
+        _templateRepository = templateRepository;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<List<MealTemplateDto>> GetAllTemplatesAsync()
+    {
+        var list = await _templateRepository.GetTemplatesAsync(false);
+        return list.Select(t => new MealTemplateDto(
+            t.Id, t.Name, t.Description, t.AssociatedFastingType, t.FmdDayNumber,
+            t.TotalCalories, t.TotalProteinGrams, t.TotalCarbsGrams, t.TotalFatGrams, t.TotalFiberGrams,
+            t.IsPlantSlantCompliant, t.IsHaraHachiBuOptimized, t.IsAdminTemplate, t.RecipeContentJson)).ToList();
+    }
+
+    public async Task<MealTemplateDto> CreateTemplateAsync(CreateMealTemplateRequest request)
+    {
+        var template = new MealTemplate
+        {
+            Name = request.Name,
+            Description = request.Description,
+            AssociatedFastingType = request.AssociatedFastingType,
+            FmdDayNumber = request.FmdDayNumber,
+            TotalCalories = request.TotalCalories,
+            TotalProteinGrams = request.TotalProteinGrams,
+            TotalCarbsGrams = request.TotalCarbsGrams,
+            TotalFatGrams = request.TotalFatGrams,
+            TotalFiberGrams = request.TotalFiberGrams,
+            IsPlantSlantCompliant = request.IsPlantSlantCompliant,
+            IsHaraHachiBuOptimized = request.IsHaraHachiBuOptimized,
+            IsAdminTemplate = true,
+            RecipeContentJson = request.RecipeContentJson
+        };
+
+        await _templateRepository.CreateAsync(template);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new MealTemplateDto(
+            template.Id, template.Name, template.Description, template.AssociatedFastingType, template.FmdDayNumber,
+            template.TotalCalories, template.TotalProteinGrams, template.TotalCarbsGrams, template.TotalFatGrams, template.TotalFiberGrams,
+            template.IsPlantSlantCompliant, template.IsHaraHachiBuOptimized, template.IsAdminTemplate, template.RecipeContentJson);
+    }
+
+    public async Task<MealTemplateDto> GetTemplateByIdAsync(Guid id)
+    {
+        var template = await _templateRepository.FoundOrThrowAsync(id, $"MealTemplate '{id}' not found.");
+        return new MealTemplateDto(
+            template.Id, template.Name, template.Description, template.AssociatedFastingType, template.FmdDayNumber,
+            template.TotalCalories, template.TotalProteinGrams, template.TotalCarbsGrams, template.TotalFatGrams, template.TotalFiberGrams,
+            template.IsPlantSlantCompliant, template.IsHaraHachiBuOptimized, template.IsAdminTemplate, template.RecipeContentJson);
+    }
+}

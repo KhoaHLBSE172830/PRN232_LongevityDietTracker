@@ -1,10 +1,12 @@
 using BuildingBlocks.Common.ResponseCode;
 using Identity.Application.DTOs;
 using Identity.Application.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Identity.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class UsersController : ControllerBase

@@ -12,6 +12,7 @@ public class DietDbContext : DbContext
     public DbSet<MealFoodItem> MealFoodItems => Set<MealFoodItem>();
     public DbSet<FastingSession> FastingSessions => Set<FastingSession>();
     public DbSet<FmdCycle> FmdCycles => Set<FmdCycle>();
+    public DbSet<FmdRule> FmdRules => Set<FmdRule>();
     public DbSet<MealTemplate> MealTemplates => Set<MealTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -20,4 +21,3 @@ public class DietDbContext : DbContext
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
     }
 }
-

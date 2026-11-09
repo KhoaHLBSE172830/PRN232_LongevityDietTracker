@@ -198,6 +198,14 @@ public class MealLogRepository : GenericRepository<MealLog>, IMealLogRepository
                            .ToListAsync();
     }
 
+    public async Task<double> GetUserTotalCaloriesForDateAsync(Guid userId, DateTime date)
+    {
+        var start = date.Date;
+        var end = start.AddDays(1);
+        return await _dbSet.Where(m => m.UserId == userId && m.LoggedAt >= start && m.LoggedAt < end)
+                           .SumAsync(m => m.TotalCalories);
+    }
+
     public async Task<MealLog?> GetWithItemsAsync(Guid mealLogId)
     {
         return await _dbSet.Include(m => m.FoodItems)
@@ -234,6 +242,33 @@ public class FmdCycleRepository : GenericRepository<FmdCycle>, IFmdCycleReposito
     public async Task<int> GetCycleCountAsync(Guid userId)
     {
         return await _dbSet.CountAsync(c => c.UserId == userId);
+    }
+}
+
+public class FmdRuleRepository : GenericRepository<FmdRule>, IFmdRuleRepository
+{
+    public FmdRuleRepository(DietDbContext context) : base(context) { }
+
+    public async Task<FmdRule?> GetRuleByDayAsync(int dayNumber)
+    {
+        return await _dbSet.FirstOrDefaultAsync(r => r.DayNumber == dayNumber);
+    }
+
+    public async Task<List<FmdRule>> GetAllRulesAsync()
+    {
+        return await _dbSet.OrderBy(r => r.DayNumber).ToListAsync();
+    }
+}
+
+public class MealTemplateRepository : GenericRepository<MealTemplate>, IMealTemplateRepository
+{
+    public MealTemplateRepository(DietDbContext context) : base(context) { }
+
+    public async Task<List<MealTemplate>> GetTemplatesAsync(bool adminOnly = false)
+    {
+        var query = _dbSet.AsNoTracking();
+        if (adminOnly) query = query.Where(t => t.IsAdminTemplate);
+        return await query.OrderBy(t => t.Name).ToListAsync();
     }
 }
 
