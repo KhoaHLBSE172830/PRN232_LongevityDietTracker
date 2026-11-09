@@ -1,10 +1,12 @@
 using BuildingBlocks.Common.ResponseCode;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Notification.Application.DTOs;
 using Notification.Application.Services;
 
 namespace Notification.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class NotificationsController : ControllerBase

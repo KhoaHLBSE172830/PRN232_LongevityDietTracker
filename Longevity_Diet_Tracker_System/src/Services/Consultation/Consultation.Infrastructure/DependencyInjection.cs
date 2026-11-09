@@ -20,7 +20,8 @@ public static class DependencyInjection
 
         services.AddDbContext<ConsultationDbContext>(options =>
         {
-            options.UseNpgsql(connectionString);
+            // AGENT.md 3.2: snake_case naming convention
+            options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
         });
 
         // Repositories & Unit of Work
@@ -36,4 +37,3 @@ public static class DependencyInjection
         return services;
     }
 }
-

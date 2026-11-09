@@ -32,29 +32,38 @@ public class NotificationService : INotificationService
 
     public async Task<NotificationLogResponse> SendAndLogNotificationAsync(SendNotificationRequest request, CancellationToken cancellationToken = default)
     {
-        var log = new NotificationLog
+        // AGENT.md Warning 5: Idempotency check for event-driven messages
+        if (!string.IsNullOrEmpty(request.EventId))
         {
-            UserId = request.UserId,
-            Recipient = request.Recipient,
-            Subject = request.Subject,
-            Body = request.Body,
-            Channel = request.Channel,
-            Status = NotificationStatus.Pending
-        };
+            var alreadyProcessed = await _logRepository.HasEventBeenProcessedAsync(request.EventId, cancellationToken);
+            if (alreadyProcessed)
+            {
+                _logger.LogInformation("Event '{EventId}' has already been processed. Skipping to guarantee Idempotency.", request.EventId);
+                var existingLogs = await _logRepository.GetLogsByUserIdAsync(request.UserId, 1, cancellationToken);
+                var existing = existingLogs.FirstOrDefault(l => l.EventId == request.EventId);
+                if (existing != null) return MapToResponse(existing);
+            }
+        }
+
+        var log = new NotificationLog(
+            request.UserId,
+            request.Recipient,
+            request.Subject,
+            request.Body,
+            request.Channel,
+            request.EventId);
 
         if (request.Channel == NotificationChannel.Email)
         {
             try
             {
                 await _emailService.SendEmailAsync(request.Recipient, request.Subject, request.Body, cancellationToken);
-                log.Status = NotificationStatus.Sent;
-                log.SentAtUtc = DateTime.UtcNow;
+                log.MarkAsSent();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send email to {Recipient}", request.Recipient);
-                log.Status = NotificationStatus.Failed;
-                log.ErrorMessage = ex.Message;
+                log.MarkAsFailed(ex.Message);
             }
         }
 
@@ -110,10 +119,10 @@ public class NotificationService : INotificationService
         }
         else
         {
-            pref.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
-            pref.FastingRemindersEnabled = request.FastingRemindersEnabled;
-            pref.NutritionistAdviceAlertsEnabled = request.NutritionistAdviceAlertsEnabled;
-            pref.UpdatedAt = DateTime.UtcNow;
+            pref.UpdatePreferences(
+                request.EmailNotificationsEnabled,
+                request.FastingRemindersEnabled,
+                request.NutritionistAdviceAlertsEnabled);
             await _preferenceRepository.UpdateAsync(pref);
         }
 
@@ -139,6 +148,7 @@ public class NotificationService : INotificationService
             log.Status,
             log.SentAtUtc,
             log.ErrorMessage,
+            log.EventId,
             log.CreatedAt);
     }
 }
