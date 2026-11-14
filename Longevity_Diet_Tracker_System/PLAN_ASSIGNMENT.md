@@ -58,18 +58,18 @@ Sau khi kiểm toán chi tiết toàn bộ mã nguồn (`ApiGateways`, `Building
 
 ## 3. CẤU TRÚC PHÂN CHIA THƯ MỤC CODE (`src/`) RÕ RÀNG — KHÔNG CONFLICT
 
-```
+```text
 Longevity_Diet_Tracker_System/
 │
-├── docker-compose.yml                      # 4 container Docker
-├── Longevity_Diet_Tracker_System.sln       # Visual Studio (.NET 8)
+├── docker-compose.yml                      # 4 container Docker (postgres, redis, rabbitmq, mailpit)
+├── Longevity_Diet_Tracker_System.sln       # Solution .NET 8
 │
 └── src/
     │
     ├── ==================== [BACKEND .NET 8] ====================
     │
     ├── ApiGateways/
-    │   └── YarpGateway/                    # 👉 [KHOA] Reverse Proxy định tuyến
+    │   └── YarpGateway/                    # 👉 [KHOA] Reverse Proxy định tuyến trung tâm
     │
     ├── BuildingBlocks/                     # Thư viện dùng chung (Common, Grpc, Messaging)
     │
@@ -89,42 +89,62 @@ Longevity_Diet_Tracker_System/
     └── ==================== [FRONTEND REACT + VITE] =============
     │
     └── Clients/
-        └── web-app/                        # Ứng dụng Web Client của nhóm
+        └── web-app/                        # Ứng dụng Web Client React + Tailwind CSS
             ├── package.json
-            ├── vite.config.ts
+            ├── vite.config.js
             └── src/
-                ├── App.tsx                 # Khai báo đường dẫn menu (Routing)
+                ├── App.jsx                 # Điều hướng 2 chiều: [Landing Page] ↔ [Dashboard]
                 │
-                ├── shared/                 # 👉 [VY DỰNG KHUNG SẴN DÙNG CHUNG]
-                │   ├── components/         # Layout khung, Sidebar bên trái, Navbar trên cùng
-                │   ├── services/           # Axios config gọi vào Gateway (localhost:7159)
-                │   └── styles/             # Bảng màu Blue Zones (xanh lá, xanh ngọc)
+                ├── shared/                 # 👉 [PHẦN CHUNG - VY ĐÃ DỰNG SẴN KHUNG CHUẨN]
+                │   ├── components/         
+                │   │   ├── Sidebar.jsx     # Thanh bên thu gọn/mở rộng (Collapsible, nhớ trạng thái)
+                │   │   ├── Navbar.jsx      # Thanh tiêu đề trên cùng, chuỗi sống khỏe & ngày
+                │   │   └── Toast.jsx       # Popup thông báo mượt mà
+                │   ├── pages/              
+                │   │   ├── LandingPage.jsx       # 🌐 Trang chủ giới thiệu công khai bên ngoài (Sang xịn, Minimal Luxury)
+                │   │   └── OverviewDashboard.jsx # 📊 Trang tổng quan 4 trụ cột bên trong (Sau khi vào hệ thống)
+                │   └── services/           
+                │       └── apiClient.js    # Cấu hình gốc Axios trỏ vào Gateway (https://localhost:7159)
                 │
-                └── features/               # 👉 [5 PHÒNG RIÊNG CHO 5 BẠN CODE]
+                └── features/               # 👉 [5 PHÒNG RIÊNG CHO 5 BẠN - MỖI BẠN 1 VIEW & 1 API]
                     │
-                    ├── 1-auth/             # 🔐 [KHOA]: Trang Login, Register, Profile
-                    │   └── pages/          # LoginPage.tsx, RegisterPage.tsx
+                    ├── auth/               # 🔐 [KHOA]: Đăng nhập, Đăng ký, Hồ sơ cá nhân
+                    │   ├── AuthModal.jsx   # Form popup Đăng nhập & Đăng ký
+                    │   ├── ProfileView.jsx # Màn hình quản lý hồ sơ & bảo mật
+                    │   └── authApi.js      # File gọi API Auth (Khoa tự do code không lo conflict)
                     │
-                    ├── 2-meal-diet/        # 🥗 [VY]: Trang Bữa ăn & Tra cứu món ăn Blue Zones
-                    │   └── pages/          # MealLogPage.tsx, FoodSearchPage.tsx
+                    ├── meals/              # 🥗 [VY]: Bữa ăn, Thước đo 80% Hara Hachi Bu, Tra cứu USDA
+                    │   ├── MealsView.jsx   # Màn hình chính Bữa ăn của Vy
+                    │   ├── AddMealModal.jsx# Popup chọn món, tính gram, calo & chất xơ
+                    │   └── mealsApi.js     # File gọi API Meals & Nutrition
                     │
-                    ├── 3-fasting-jobs/     # ⏱️ [KIỆT]: Trang Nhịn ăn 16/8 & Dashboard Jobs
-                    │   └── pages/          # FastingTimerPage.tsx, JobsMonitorPage.tsx
+                    ├── fasting/            # ⏱️ [KIỆT]: Nhịn ăn gián đoạn 16/8, OMAD, Bộ đếm giờ
+                    │   ├── FastingView.jsx # Màn hình đếm giờ nhịn ăn
+                    │   └── fastingApi.js   # File gọi API Fasting
                     │
-                    ├── 4-fmd-notification/ # 📊 [QUỐC]: Trang Chu kỳ FMD 5 ngày & Hộp thư
-                    │   └── pages/          # FmdCyclePage.tsx, InboxNotificationPage.tsx
+                    ├── fmd/                # 🌿 [QUỐC]: Chu kỳ FMD 5 ngày, Cảnh báo định mức calo
+                    │   ├── FmdView.jsx     # Màn hình theo dõi lộ trình 5 ngày thanh lọc
+                    │   └── fmdApi.js       # File gọi API FMD & Rules
                     │
-                    └── 5-consultation/     # 🩺 [KHÔI]: Trang Đặt lịch & Bác sĩ gửi lời khuyên
-                        └── pages/          # BookingPage.tsx, DoctorAdvicePage.tsx
+                    └── consultation/       # 👨‍⚕️ [KHÔI]: Đặt lịch khám, Bác sĩ gửi lời khuyên
+                        ├── ConsultationView.jsx # Màn hình danh sách chuyên gia & đặt lịch
+                        └── consultationApi.js   # File gọi API Consultation
 ```
+
+> [!TIP]
+> **Quy tắc làm việc nhóm an toàn (Zero Conflict Rule):**
+> 1. Mỗi thành viên khi làm Frontend chỉ mở đúng thư mục trong `src/features/{tên_domain}/` của mình.
+> 2. Khi nối API backend, mỗi người tự viết trong file `*Api.js` riêng của mình, không đụng chạm vào file của bạn khác.
+> 3. Thanh Sidebar hỗ trợ tính năng thu gọn/mở rộng (`isCollapsed`), tự động lưu trạng thái vào `localStorage` và không bị tự bung ra khi chuyển tab.
 
 ---
 
 ## 4. KỊCH BẢN DEMO 3 WORKFLOW LIỀN MẠCH CHO BUỔI THỨ 2
 
 1. **Workflow 1: Đăng nhập & Lối sống Dinh dưỡng Blue Zones (Khoa $\rightarrow$ Vy)**
-   * Khoa demo đăng nhập tài khoản User trên trang Web.
-   * Chuyển sang trang của Vy: User tra cứu món ăn thực vật $\rightarrow$ Log bữa ăn trưa chuẩn Blue Zones với đậu gà, rau bina $\rightarrow$ Hệ thống tự động tính Macros và gắn cờ tuân thủ ăn no 80% (`Hara Hachi Bu`).
+   * Mở màn: Trình chiếu **Trang Chủ Giới Thiệu (Landing Page)** bên ngoài với thiết kế tối giản sang trọng, giới thiệu đề tài và 4 trụ cột.
+   * Khoa bấm nút **"Đăng Nhập"** trên Landing Page (hoặc nút Vào nhanh Demo Minh Anh) $\rightarrow$ Chuyển mượt mà sang **Bảng điều khiển (Dashboard)**.
+   * Chuyển sang tab **Dinh Dưỡng & Bữa Ăn (Vy)**: Người dùng tra cứu thực phẩm $\rightarrow$ Ghi nhận bữa ăn trưa chuẩn thực vật $\rightarrow$ Vòng tròn calo cập nhật động, hệ thống tự động tính Macros và kiểm tra ngưỡng no 80% (`Hara Hachi Bu`).
 2. **Workflow 2: Thử thách Nhịn ăn 16/8, Chu kỳ FMD 5 ngày & Bắn cảnh báo (Kiệt $\rightarrow$ Quốc)**
    * Kiệt demo User bấm bắt đầu nhịn ăn 16/8 $\rightarrow$ Đồng hồ đếm ngược chạy `InProgress`.
    * Quốc demo User bắt đầu chu kỳ FMD 5 ngày $\rightarrow$ Cố ý log bữa ăn vượt quá 1.100 kcal của Ngày 1 $\rightarrow$ Hệ thống phát hiện vi phạm, gắn cờ `ExceededThreshold = true`, lập tức kích hoạt RabbitMQ gửi email cảnh báo vi phạm tới Mailpit!
