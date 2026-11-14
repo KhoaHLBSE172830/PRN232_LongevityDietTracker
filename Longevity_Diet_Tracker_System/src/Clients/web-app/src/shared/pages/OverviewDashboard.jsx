@@ -261,7 +261,7 @@ export default function OverviewDashboard({
             onClick={() => onNavigate('meals')}
             icon={UtensilsCrossed}
             color="green"
-            owner="Phần của Vy"
+            owner="Dinh Dưỡng"
             title="Dinh dưỡng hôm nay"
             value="920"
             unit="/ 1850 kcal"
@@ -275,7 +275,7 @@ export default function OverviewDashboard({
             onClick={() => onNavigate('fasting')}
             icon={Timer}
             color="blue"
-            owner="Phần của Kiệt"
+            owner="Nhịp Sinh Học"
             title="Nhịn ăn gián đoạn"
             value="14g 15p"
             unit="/ 16g"
@@ -289,7 +289,7 @@ export default function OverviewDashboard({
             onClick={() => onNavigate('fmd')}
             icon={Leaf}
             color="sage"
-            owner="Phần của Quốc"
+            owner="Thanh Lọc"
             title="Chu kỳ FMD 5 ngày"
             value="Nghỉ giữa"
             unit="chu kỳ"
@@ -303,7 +303,7 @@ export default function OverviewDashboard({
             onClick={() => onNavigate('consultation')}
             icon={Stethoscope}
             color="purple"
-            owner="Phần của Khôi"
+            owner="Chuyên Gia"
             title="Chuyên gia đồng hành"
             value="BS. Trần Văn Hùng"
             status="● Lịch hẹn: 15:00 Thứ Ba tới"

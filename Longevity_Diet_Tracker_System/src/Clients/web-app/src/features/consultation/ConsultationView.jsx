@@ -15,9 +15,7 @@ export default function ConsultationView() {
               <span className="text-xs font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-lg border border-purple-200">
                 Tư Vấn Chuyên Gia & Bác Sĩ Dinh Dưỡng
               </span>
-              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                Phụ trách: Dương Đình Khôi
-              </span>
+              
             </div>
             <h2 className="text-xl font-extrabold text-slate-900 mt-1">
               Đặt Lịch Khám & Nhận Lời Khuyên Sống Thọ Cá Nhân Hóa
@@ -78,7 +76,7 @@ export default function ConsultationView() {
 
       <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200 text-purple-900 text-xs flex items-center justify-between">
         <p>
-          💡 <strong>Không gian làm việc của Khôi:</strong> Toàn bộ mã nguồn giao diện sẽ đặt tại <code className="bg-white px-2 py-0.5 rounded border border-purple-200 font-mono font-bold">src/features/consultation/ConsultationView.jsx</code>.
+          🩺 <strong>Bảo mật thông tin y tế:</strong> Toàn bộ hồ sơ dinh dưỡng, lịch sử khám và khuyến nghị từ bác sĩ được mã hóa an toàn theo tiêu chuẩn bảo mật dữ liệu y tế.
         </p>
       </div>
     </div>

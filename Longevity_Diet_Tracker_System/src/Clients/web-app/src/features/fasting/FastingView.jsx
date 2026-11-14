@@ -15,9 +15,7 @@ export default function FastingView() {
               <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200">
                 Nhịn Ăn Gián Đoạn (Intermittent Fasting)
               </span>
-              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                Phụ trách: Trần Anh Kiệt
-              </span>
+              
             </div>
             <h2 className="text-xl font-extrabold text-slate-900 mt-1">
               Bộ Đếm Giờ Fasting 16/8 & Tự Động Hóa Nhắc Nhở
@@ -78,7 +76,7 @@ export default function FastingView() {
 
       <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 text-blue-900 text-xs flex items-center justify-between">
         <p>
-          💡 <strong>Không gian làm việc của Kiệt:</strong> Toàn bộ mã nguồn giao diện sẽ đặt tại <code className="bg-white px-2 py-0.5 rounded border border-blue-200 font-mono font-bold">src/features/fasting/FastingView.jsx</code>.
+          💧 <strong>Lưu ý trong thời gian nhịn ăn:</strong> Trong khung giờ nhịn ăn 16 tiếng, duy trì uống đủ nước lọc, trà thảo mộc không đường để cơ thể đào thải độc tố và tối ưu hóa chuyển hóa năng lượng.
         </p>
       </div>
     </div>

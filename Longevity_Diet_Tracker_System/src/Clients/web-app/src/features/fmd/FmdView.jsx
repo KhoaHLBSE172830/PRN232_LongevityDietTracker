@@ -15,9 +15,7 @@ export default function FmdView() {
               <span className="text-xs font-bold uppercase tracking-wider text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-lg border border-teal-200">
                 Chế Độ Giả Nhịn Ăn FMD 5 Ngày (Dr. Valter Longo)
               </span>
-              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                Phụ trách: Trần Phạm Khánh Quốc
-              </span>
+              
             </div>
             <h2 className="text-xl font-extrabold text-slate-900 mt-1">
               Thanh Lọc Tế Bào & Cảnh Báo Định Mức Năng Lượng
@@ -92,7 +90,7 @@ export default function FmdView() {
 
       <div className="p-4 rounded-2xl bg-teal-50/60 border border-teal-200 text-teal-900 text-xs flex items-center justify-between">
         <p>
-          💡 <strong>Không gian làm việc của Quốc:</strong> Toàn bộ mã nguồn giao diện sẽ đặt tại <code className="bg-white px-2 py-0.5 rounded border border-teal-200 font-mono font-bold">src/features/fmd/FmdView.jsx</code>.
+          🌿 <strong>Giao thức FMD (Fasting Mimicking Diet):</strong> Được nghiên cứu bởi Viện Tuổi Thọ (Đại học Nam California - USC), chu kỳ giúp kích hoạt cơ chế tự thực bào và tái tạo tế bào gốc tự nhiên cho cơ thể.
         </p>
       </div>
     </div>

@@ -16,12 +16,10 @@ export default function ProfileView() {
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
                 Hồ Sơ Sức Khỏe & Quản Trị Hệ Thống
               </span>
-              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                Phụ trách: Hoàng Lê Khoa (Leader)
-              </span>
+              
             </div>
             <h2 className="text-xl font-extrabold text-slate-900 mt-1">
-              Bảo Mật Identity JWT, Gateway & Cài Đặt Người Dùng
+              Bảo Mật Tài Khoản & Cài Đặt Hồ Sơ Sức Khỏe
             </h2>
           </div>
         </div>
@@ -89,7 +87,7 @@ export default function ProfileView() {
           </div>
           <h4 className="font-extrabold text-slate-800 text-sm">Bảo Mật Identity & Gateway</h4>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Hỗ trợ đăng nhập Google OAuth 2.0 và cơ chế mã hóa JWT token bảo vệ an toàn các route microservices.
+            Hỗ trợ đăng nhập một chạm Google OAuth 2.0 và cơ chế mã hóa phiên làm việc an toàn, bảo vệ thông tin sức khỏe cá nhân.
           </p>
           <div className="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-700 flex items-center gap-1">
             <span>Trạng thái: Sẵn sàng kết nối giao diện</span>
@@ -100,7 +98,7 @@ export default function ProfileView() {
 
       <div className="p-4 rounded-2xl bg-slate-100 border border-slate-300 text-slate-800 text-xs flex items-center justify-between">
         <p>
-          💡 <strong>Không gian làm việc của Khoa:</strong> Toàn bộ mã nguồn giao diện sẽ đặt tại <code className="bg-white px-2 py-0.5 rounded border border-slate-300 font-mono font-bold">src/features/auth/ProfileView.jsx</code>.
+          🛡️ <strong>Hệ thống quản trị an toàn:</strong> Dữ liệu hồ sơ người dùng được bảo vệ đa tầng, đảm bảo tính toàn vẹn và quyền riêng tư tuyệt đối trên toàn hệ thống.
         </p>
       </div>
     </div>

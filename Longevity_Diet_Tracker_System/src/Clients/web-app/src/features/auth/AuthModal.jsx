@@ -166,7 +166,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-center">
           <p className="text-[10px] text-slate-400 flex items-center justify-center gap-1 font-medium">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 inline" />
-            <span>Phân hệ Identity & Bảo mật phụ trách bởi Hoàng Lê Khoa</span>
+            <span>Bảo mật dữ liệu sức khỏe đạt chuẩn y tế số & OAuth 2.0</span>
           </p>
         </div>
       </div>

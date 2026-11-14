@@ -25,37 +25,31 @@ export default function Sidebar({
       id: 'overview',
       label: 'Tổng quan',
       icon: Home,
-      owner: 'Chung',
     },
     {
       id: 'meals',
       label: 'Dinh dưỡng & Bữa ăn',
       icon: UtensilsCrossed,
-      owner: 'Vy',
     },
     {
       id: 'fasting',
       label: 'Nhịn ăn gián đoạn',
       icon: Timer,
-      owner: 'Kiệt',
     },
     {
       id: 'fmd',
       label: 'Chu kỳ FMD 5 ngày',
       icon: Leaf,
-      owner: 'Quốc',
     },
     {
       id: 'consultation',
       label: 'Tư vấn chuyên gia',
       icon: Stethoscope,
-      owner: 'Khôi',
     },
     {
       id: 'profile',
       label: 'Hồ sơ & Bảo mật',
       icon: UserCircle2,
-      owner: 'Khoa',
     },
   ];
 
@@ -289,7 +283,7 @@ export default function Sidebar({
                     "
                   >
                     <span>{item.label}</span>
-                    <span className="ml-1.5 text-[9px] font-normal text-emerald-200/80">({item.owner})</span>
+                    
                   </div>
                 </div>
               );
@@ -367,30 +361,14 @@ export default function Sidebar({
                   </span>
                 </div>
 
-                {/* Owner Badge */}
-                <div className="flex shrink-0 items-center gap-1">
-                  <span
-                    className={`
-                      rounded-lg px-1.5 py-1
-                      text-[9px] font-bold
-                      transition-colors
-                      ${isActive
-                        ? 'bg-[#E4F1E3] text-[#28734D]'
-                        : 'bg-[#DCE8DA] text-[#607765]'
-                      }
-                    `}
-                  >
-                    {item.owner}
-                  </span>
-
-                  {isActive && (
-                    <ChevronRight
-                      size={15}
-                      strokeWidth={2}
-                      className="text-[#28734D]"
-                    />
-                  )}
-                </div>
+                {/* Active Indicator Chevron */}
+                {isActive && (
+                  <ChevronRight
+                    size={16}
+                    strokeWidth={2.2}
+                    className="text-[#28734D] shrink-0 transition-transform duration-200"
+                  />
+                )}
 
                 {/* Active Indicator */}
                 {isActive && (
