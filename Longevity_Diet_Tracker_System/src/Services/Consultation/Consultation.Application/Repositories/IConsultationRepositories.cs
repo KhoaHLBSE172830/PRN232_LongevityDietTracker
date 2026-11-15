@@ -6,15 +6,18 @@ namespace Consultation.Application.Repositories;
 public interface IConsultationSessionRepository : IGenericRepository<ConsultationSession>
 {
     Task<List<ConsultationSession>> GetByNutritionistIdAsync(Guid nutritionistId);
+    Task<List<ConsultationSession>> GetByUserIdAsync(Guid userId);
     Task<ConsultationSession?> GetWithAdviceAsync(Guid sessionId);
 }
 
 public interface INutritionistProfileRepository : IGenericRepository<NutritionistProfile>
 {
     Task<NutritionistProfile?> GetByUserIdAsync(Guid userId);
+    Task<List<NutritionistProfile>> GetVerifiedNutritionistsAsync();
 }
 
 public interface IAdviceNoteRepository : IGenericRepository<AdviceNote>
 {
+    Task<List<AdviceNote>> GetByUserIdAsync(Guid userId);
 }
 

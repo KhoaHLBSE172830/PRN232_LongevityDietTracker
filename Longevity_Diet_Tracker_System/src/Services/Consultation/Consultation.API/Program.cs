@@ -10,6 +10,13 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Port 5003 for Consultation Service matching YARP Gateway
+var httpPort = builder.Configuration.GetValue("Ports:Http", 5003);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(httpPort);
+});
+
 // Add Controllers with Global ValidationFilter
 builder.Services.AddControllers(options =>
 {
@@ -76,6 +83,9 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// Automatically seed verified Nutritionist profiles if database is empty
+await Consultation.Infrastructure.Database.ConsultationDbSeeder.SeedAsync(app.Services);
 
 // Global Exception Handling Middleware
 app.UseMiddleware<ExceptionHandlingMiddleware>();

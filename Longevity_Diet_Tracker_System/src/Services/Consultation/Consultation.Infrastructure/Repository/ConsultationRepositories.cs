@@ -196,6 +196,15 @@ public class ConsultationSessionRepository : GenericRepository<ConsultationSessi
                            .ToListAsync();
     }
 
+    public async Task<List<ConsultationSession>> GetByUserIdAsync(Guid userId)
+    {
+        return await _dbSet.Include(s => s.Nutritionist)
+                           .Include(s => s.AdviceNote)
+                           .Where(s => s.UserId == userId)
+                           .OrderByDescending(s => s.ScheduledAtUtc)
+                           .ToListAsync();
+    }
+
     public async Task<ConsultationSession?> GetWithAdviceAsync(Guid sessionId)
     {
         return await _dbSet.Include(s => s.Nutritionist)
@@ -212,10 +221,25 @@ public class NutritionistProfileRepository : GenericRepository<NutritionistProfi
     {
         return await _dbSet.FirstOrDefaultAsync(n => n.UserId == userId);
     }
+
+    public async Task<List<NutritionistProfile>> GetVerifiedNutritionistsAsync()
+    {
+        return await _dbSet.Where(n => n.IsVerified)
+                           .OrderBy(n => n.FullName)
+                           .ToListAsync();
+    }
 }
 
 public class AdviceNoteRepository : GenericRepository<AdviceNote>, IAdviceNoteRepository
 {
     public AdviceNoteRepository(ConsultationDbContext context) : base(context) { }
+
+    public async Task<List<AdviceNote>> GetByUserIdAsync(Guid userId)
+    {
+        return await _dbSet.Include(a => a.ConsultationSession)
+                           .Where(a => a.UserId == userId)
+                           .OrderByDescending(a => a.CreatedAt)
+                           .ToListAsync();
+    }
 }
 
