@@ -1,0 +1,59 @@
+%% [C3] Component Diagram – DietFasting Service & Consultation gRPC Integration
+%% Author: Dương Đình Khôi & Kiệt (Domain 1 & Domain 2 Boundary)
+flowchart LR
+    %% External Callers
+    GW["YARP API Gateway (:5000 / :7159)<br/>[HTTP/REST Reverse Proxy]"]
+    CONSULT_SVC["Consultation Service (:5003)<br/>[gRPC Client - HTTP/2 Cleartext]"]
+
+    %% DietFasting Service Boundaries
+    subgraph DFS["Diet & Fasting Service (Dual Port: 5002 HTTP / 7002 gRPC)"]
+        %% Presentation Layer
+        subgraph PRESENTATION["1. Presentation Layer"]
+            REST_CTRL["REST Controllers (:5002)<br/>- MealsController<br/>- FastingController<br/>- FmdController"]
+            GRPC_EP["DietFastingGrpcEndpoint (:7002)<br/>[gRPC Server Service]<br/>Implement GetUserHealthSummary"]
+        end
+
+        %% Application Layer
+        subgraph APPLICATION["2. Application Layer"]
+            MEAL_SVC["IMealService / MealService"]
+            FAST_SVC["IFastingService / FastingService"]
+            FMD_SVC["IFmdService / FmdService"]
+            SUMMARY_SVC["IHealthSummaryQuery<br/>Aggregate Fasting, Macros, FMD Snapshot"]
+        end
+
+        %% Infrastructure Layer
+        subgraph INFRASTRUCTURE["3. Infrastructure Layer"]
+            EF_CTX["DietDbContext<br/>[EF Core PostgreSQL - snake_case]"]
+            REDIS_CACHE["Redis Cache Provider<br/>StackExchange.Redis (:6379)<br/>Key: nutrition:food:*"]
+            REPOS["DietFasting Repositories<br/>- MealLogRepository<br/>- FastingSessionRepository<br/>- FmdCycleRepository"]
+        end
+
+        %% Domain Layer
+        subgraph DOMAIN["4. Domain Layer (Rich Entities)"]
+        ENT_MEAL["MealLog & MealFoodItem"]
+        ENT_FAST["FastingSession"]
+        ENT_FMD["FmdCycle & FmdDailyLog"]
+    end
+    end
+
+    %% External Systems
+    DB[("PostgreSQL (:5432)<br/>Database: diet_db")]
+    REDIS[("Redis Cache (:6379)<br/>Food Nutrition Cache")]
+    EXT_API["External Nutrition API<br/>[USDA / CalorieNinjas REST]"]
+
+    %% Connectors
+    GW -- "REST API Calls (HTTP)" --> REST_CTRL
+    CONSULT_SVC -- "gRPC Call: GetUserHealthSummary<br/>(HTTP/2 cleartext port 7002)" --> GRPC_EP
+
+    REST_CTRL --> MEAL_SVC & FAST_SVC & FMD_SVC
+    GRPC_EP --> SUMMARY_SVC
+
+    SUMMARY_SVC --> REPOS
+    MEAL_SVC --> REPOS
+    FAST_SVC --> REPOS
+    FMD_SVC --> REPOS
+
+    REPOS --> DOMAIN
+    REPOS --> EF_CTX --> DB
+    MEAL_SVC --> REDIS_CACHE --> REDIS
+    REDIS_CACHE -. "Cache Miss" .-> EXT_API

@@ -1,5 +1,6 @@
 using BuildingBlocks.Grpc.Contracts;
 using BuildingBlocks.Grpc.Protos;
+using Consultation.Domain.Exceptions;
 using Grpc.Net.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -43,17 +44,8 @@ public class DietFastingGrpcClient : IDietFastingGrpcClientService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to call DietFasting gRPC GetUserFastingSummary on {Url}. Returning fallback data.", _grpcUrl);
-            return new FastingSummaryContract
-            {
-                UserId = userId,
-                IsCurrentlyFasting = true,
-                CurrentFastingType = "Intermittent16_8",
-                StartTimeUtc = DateTime.UtcNow.AddHours(-14),
-                TargetEndTimeUtc = DateTime.UtcNow.AddHours(2),
-                TotalCompletedFasts = 24,
-                TotalFastedHours = 384
-            };
+            _logger.LogError(ex, "Failed to call DietFasting gRPC GetUserFastingSummary on {Url}.", _grpcUrl);
+            throw new ServiceUnavailableException("Dịch vụ theo dõi nhịn ăn (DietFasting gRPC) tạm thời không khả dụng.");
         }
     }
 
@@ -82,16 +74,8 @@ public class DietFastingGrpcClient : IDietFastingGrpcClientService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to call DietFasting gRPC GetUserNutritionSummary on {Url}. Returning fallback data.", _grpcUrl);
-            return new NutritionSummaryContract
-            {
-                UserId = userId,
-                AverageCalories = 1850,
-                AverageProtein = 85,
-                AverageCarbs = 210,
-                AverageFat = 55,
-                TotalLoggedMeals = 45
-            };
+            _logger.LogError(ex, "Failed to call DietFasting gRPC GetUserNutritionSummary on {Url}.", _grpcUrl);
+            throw new ServiceUnavailableException("Dịch vụ theo dõi dinh dưỡng (DietFasting gRPC) tạm thời không khả dụng.");
         }
     }
 
@@ -118,15 +102,8 @@ public class DietFastingGrpcClient : IDietFastingGrpcClientService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to call DietFasting gRPC GetActiveFmdCycle on {Url}. Returning fallback data.", _grpcUrl);
-            return new FmdCycleStatusContract
-            {
-                HasActiveCycle = true,
-                FmdCycleId = Guid.NewGuid(),
-                CycleNumber = 2,
-                CurrentDay = 3,
-                Status = "Active"
-            };
+            _logger.LogError(ex, "Failed to call DietFasting gRPC GetActiveFmdCycle on {Url}.", _grpcUrl);
+            throw new ServiceUnavailableException("Dịch vụ theo dõi chu kỳ FMD (DietFasting gRPC) tạm thời không khả dụng.");
         }
     }
 }

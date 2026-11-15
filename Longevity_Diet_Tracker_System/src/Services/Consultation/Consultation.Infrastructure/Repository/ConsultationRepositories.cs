@@ -241,5 +241,10 @@ public class AdviceNoteRepository : GenericRepository<AdviceNote>, IAdviceNoteRe
                            .OrderByDescending(a => a.CreatedAt)
                            .ToListAsync();
     }
+
+    public async Task<AdviceNote?> GetBySessionIdAsync(Guid sessionId)
+    {
+        return await _dbSet.FirstOrDefaultAsync(a => a.ConsultationSessionId == sessionId);
+    }
 }
 

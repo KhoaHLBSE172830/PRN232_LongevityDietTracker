@@ -1,0 +1,122 @@
+%% [C4] Code / Class Diagram – Consultation Service (Rich Domain Model & Onion Architecture)
+%% Author: Dương Đình Khôi (Domain 2: Consultation Service)
+classDiagram
+    class BaseEntity {
+        <<abstract>>
+        +Guid Id
+        +DateTime? CreatedAt
+        +DateTime? UpdatedAt
+    }
+
+    class NutritionistProfile {
+        +string FullName
+        +string Certification
+        +string Specialization
+        +string Bio
+        +bool IsVerified
+        +Verify() void
+        +Unverify() void
+        +UpdateProfile(fullName, cert, spec, bio) void
+    }
+
+    class ConsultationSession {
+        +Guid UserId
+        +Guid NutritionistId
+        +DateTime ScheduledAtUtc
+        +int DurationMinutes
+        +SessionStatus Status
+        +string? Notes
+        +AdviceNote? AdviceNote
+        +Schedule(scheduledAtUtc, durationMinutes) void
+        +Confirm() void
+        +AttachAdvice() void
+        +Cancel() void
+    }
+
+    class AdviceNote {
+        +Guid ConsultationSessionId
+        +Guid UserId
+        +Guid NutritionistId
+        +string AdviceSummary
+        +string DietaryRecommendations
+        +string FastingRecommendations
+        +Create(sessionId, userId, nutriId, summary, dietary, fasting)$ AdviceNote
+    }
+
+    class SessionStatus {
+        <<enumeration>>
+        Pending = 1
+        Confirmed = 2
+        Completed = 3
+        Cancelled = 4
+    }
+
+    class IConsultationService {
+        <<interface>>
+        +GetNutritionistsAsync() Task~List~NutritionistDto~~
+        +GetNutritionistByIdAsync(id) Task~NutritionistDto~
+        +BookSessionAsync(dto) Task~ConsultationSessionDto~
+        +GetUserSessionsAsync(userId) Task~List~ConsultationSessionDto~~
+        +GetNutritionistSessionsAsync(nutritionistId) Task~List~ConsultationSessionDto~~
+        +ReviewUserProgressAsync(userId) Task~UserHealthSummaryDto~
+        +SendAdviceAsync(dto) Task~AdviceNoteDto~
+        +GetUserAdvicesAsync(userId) Task~List~AdviceNoteDto~~
+    }
+
+    class ConsultationApplicationService {
+        -INutritionistProfileRepository _nutritionistRepo
+        -IConsultationSessionRepository _sessionRepo
+        -IAdviceNoteRepository _adviceRepo
+        -IDietFastingGrpcClient _dietFastingGrpcClient
+        -IEventBusPublisher _eventBusPublisher
+        -IUnitOfWork _unitOfWork
+        +BookSessionAsync(dto) Task~ConsultationSessionDto~
+        +SendAdviceAsync(dto) Task~AdviceNoteDto~
+        +ReviewUserProgressAsync(userId) Task~UserHealthSummaryDto~
+    }
+
+    class IDietFastingGrpcClient {
+        <<interface>>
+        +GetUserHealthSummaryAsync(userId, ct) Task~UserHealthSummaryDto~
+    }
+
+    class DietFastingGrpcClient {
+        -DietFastingGrpc.DietFastingGrpcClient _client
+        -ILogger _logger
+        +GetUserHealthSummaryAsync(userId, ct) Task~UserHealthSummaryDto~
+    }
+
+    class INutritionistProfileRepository {
+        <<interface>>
+        +GetByIdAsync(id) Task~NutritionistProfile~
+        +GetVerifiedAsync() Task~List~NutritionistProfile~~
+    }
+
+    class IConsultationSessionRepository {
+        <<interface>>
+        +GetByIdAsync(id) Task~ConsultationSession~
+        +GetByUserIdAsync(userId) Task~List~ConsultationSession~~
+        +GetByNutritionistIdAsync(nutriId) Task~List~ConsultationSession~~
+        +HasActiveSessionAsync(userId, nutriId) Task~bool~
+    }
+
+    class IAdviceNoteRepository {
+        <<interface>>
+        +GetBySessionIdAsync(sessionId) Task~AdviceNote~
+        +GetByUserIdAsync(userId) Task~List~AdviceNote~~
+    }
+
+    BaseEntity <|-- NutritionistProfile
+    BaseEntity <|-- ConsultationSession
+    BaseEntity <|-- AdviceNote
+
+    ConsultationSession "1" *-- "0..1" AdviceNote : Contains
+    ConsultationSession --> SessionStatus : Uses
+
+    IConsultationService <|.. ConsultationApplicationService : Implements
+    IDietFastingGrpcClient <|.. DietFastingGrpcClient : Implements
+
+    ConsultationApplicationService --> INutritionistProfileRepository
+    ConsultationApplicationService --> IConsultationSessionRepository
+    ConsultationApplicationService --> IAdviceNoteRepository
+    ConsultationApplicationService --> IDietFastingGrpcClient

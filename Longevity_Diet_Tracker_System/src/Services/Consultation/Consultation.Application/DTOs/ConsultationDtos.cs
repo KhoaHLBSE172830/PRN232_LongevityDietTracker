@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using BuildingBlocks.Grpc.Contracts;
 using Consultation.Domain.Enums;
 
@@ -14,8 +15,11 @@ public record NutritionistProfileDto(
 
 public record BookConsultationDto(
     Guid UserId,
+    [Required(ErrorMessage = "NutritionistId không được để trống")]
     Guid NutritionistId,
+    [Required(ErrorMessage = "ScheduledAtUtc không được để trống")]
     DateTime ScheduledAtUtc,
+    [MaxLength(500)]
     string? Notes);
 
 public record ConsultationSessionDto(
@@ -29,11 +33,21 @@ public record ConsultationSessionDto(
     string? NutritionistName = null);
 
 public record SendAdviceDto(
+    [Required(ErrorMessage = "ConsultationSessionId không được để trống")]
     Guid ConsultationSessionId,
-    Guid UserId,
-    Guid NutritionistId,
+    Guid? UserId,
+    Guid? NutritionistId,
+    [Required(ErrorMessage = "AdviceSummary không được để trống")]
+    [MinLength(5, ErrorMessage = "Tóm tắt lời khuyên phải từ 5 ký tự")]
+    [MaxLength(2000)]
     string AdviceSummary,
+    [Required(ErrorMessage = "DietaryRecommendations không được để trống")]
+    [MinLength(5, ErrorMessage = "Khuyến nghị dinh dưỡng phải từ 5 ký tự")]
+    [MaxLength(2000)]
     string DietaryRecommendations,
+    [Required(ErrorMessage = "FastingRecommendations không được để trống")]
+    [MinLength(5, ErrorMessage = "Khuyến nghị nhịn ăn phải từ 5 ký tự")]
+    [MaxLength(2000)]
     string FastingRecommendations);
 
 public record AdviceNoteDto(
@@ -52,4 +66,3 @@ public record UserHealthReviewDto(
     FastingSummaryContract FastingSummary,
     NutritionSummaryContract NutritionSummary,
     FmdCycleStatusContract FmdCycleStatus);
-
