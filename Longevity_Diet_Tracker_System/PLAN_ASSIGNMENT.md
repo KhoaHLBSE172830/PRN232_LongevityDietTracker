@@ -88,8 +88,9 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 ### BẢNG 3: NHỊN ĂN GIÁN ĐOẠN 16/8 & gRPC SERVER (KIỆT PHỤ TRÁCH) — PORT 5002 / gRPC 7002
 | Method | Endpoint qua Gateway (`https://localhost:7159`) | Target Service Route | Request Body / Query Params | Chức năng & Kết quả nghiệp vụ |
 | :---: | :--- | :--- | :--- | :--- |
-| `POST` | `/api/fasting/start` | `DietFasting.API: /api/fasting/start` | `StartFastingRequestDto` (`UserId`, `FastingType`, `DurationHours`) | Bắt đầu phiên nhịn ăn (16/8, 18/6, 20/4 OMAD), tính giờ kết thúc dự kiến. |
-| `POST` | `/api/fasting/{sessionId}/end` | `DietFasting.API: /api/fasting/{id}/end` | Route param: `sessionId` (GUID) | Kết thúc phiên nhịn ăn, ghi nhận tổng số giờ nhịn thực tế. |
+| `POST` | `/api/fasting/start` | `DietFasting.API: /api/fasting/start` | `StartFastingRequestDto` (`FastingType`, `DurationHours` 0.5–168, `StartTimeUtc` tùy chọn; **`UserId` lấy từ JWT, giá trị trong body bị bỏ qua**) | Bắt đầu phiên nhịn ăn (16/8, 18/6, 20/4 OMAD), tính giờ kết thúc dự kiến. 409 nếu đã có phiên đang chạy. |
+| `POST` | `/api/fasting/{sessionId}/end` | `DietFasting.API: /api/fasting/{id}/end` | Route param: `sessionId` (GUID); body tùy chọn `{ "moodNotes": "..." }` | Kết thúc phiên nhịn ăn, ghi nhận tổng số giờ nhịn thực tế. 403 nếu không phải chủ phiên. |
+| `POST` | `/api/fasting/{sessionId}/cancel` | `DietFasting.API: /api/fasting/{id}/cancel` | Route param: `sessionId` (GUID); body tùy chọn `{ "reason": "..." }` | **(Mới)** Hủy phiên nhịn ăn đang chạy. |
 | `GET` | `/api/fasting/user/{userId}/active` | `DietFasting.API: /api/fasting/user/{id}/active` | Route param: `userId` (GUID) | Lấy phiên nhịn ăn đang kích hoạt (để chạy đồng hồ đếm ngược trên web). |
 | `gRPC` | `DietFastingGrpc.GetUserFastingSummary` | `DietFasting.API: Cổng 7002 (HTTP/2)` | `UserFastingSummaryRequest` (`user_id`) | Cung cấp dữ liệu nhịn ăn tổng hợp tức thì cho Consultation Service. |
 | `gRPC` | `DietFastingGrpc.GetUserNutritionSummary` | `DietFasting.API: Cổng 7002 (HTTP/2)` | `UserNutritionSummaryRequest` (`user_id`, `start_date`, `end_date`) | Cung cấp số liệu calo/macros trung bình 7 ngày qua cho Bác sĩ. |
@@ -131,8 +132,11 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 | Method | Endpoint qua Gateway / Direct | Target Service Route | Request Body / Query Params | Chức năng & Kết quả nghiệp vụ |
 | :---: | :--- | :--- | :--- | :--- |
 | `GET` | `http://localhost:5005/` | `JobService.API: /` | Không có | Kiểm tra tình trạng hoạt động của Hangfire Job Service & Kết nối RabbitMQ. |
-| `POST` | `http://localhost:5005/jobs/trigger/fasting-check` | `JobService.API: /jobs/trigger/fasting-check` | Không có | Kích hoạt ngay lập tức tác vụ quét lịch nhịn ăn (phục vụ demo trực tiếp). |
-| `POST` | `http://localhost:5005/jobs/trigger/fmd-check` | `JobService.API: /jobs/trigger/fmd-check` | Không có | Kích hoạt ngay lập tức tác vụ kiểm tra chu kỳ FMD và cảnh báo vi phạm. |
+| `GET` | `http://localhost:5005/hangfire` | Hangfire Dashboard | Không có | **(Mới)** Dashboard Hangfire (chỉ truy cập được từ máy local). Lưu trạng thái ở `job_db`, schema `hangfire`. |
+| `GET` | `http://localhost:5005/jobs/recurring` | `JobService.API: /jobs/recurring` | Không có | **(Mới)** Liệt kê 3 recurring job: `fasting-schedule-check` (`*/15 * * * *`), `fmd-daily-check` (`0 0 * * *`), `weekly-nutrition-summary` (`0 8 * * 1`), giờ UTC. |
+| `POST` | `http://localhost:5005/jobs/trigger/fasting-check` | `JobService.API: /jobs/trigger/fasting-check` | Không có | Đưa job quét nhịn ăn vào hàng đợi Hangfire (chạy sau ~1 giây, thấy trong dashboard) → publish `fasting.schedule.trigger`. Dùng cho demo trực tiếp. |
+| `POST` | `http://localhost:5005/jobs/trigger/fmd-check` | `JobService.API: /jobs/trigger/fmd-check` | Không có | Như trên cho job FMD hằng ngày (`JobName = FmdCycleDailyJob`). Hiện **chưa có handler** xử lý ở phía DietFasting (xem mục 10.2). |
+| `POST` | `http://localhost:5005/jobs/trigger/weekly-summary` | `JobService.API: /jobs/trigger/weekly-summary` | Không có | **(Mới)** Như trên cho job tổng kết tuần (`JobName = WeeklyNutritionSummaryJob`), chưa có handler. |
 
 ---
 
@@ -173,9 +177,11 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 - [ ] **Demo sáng thứ Hai**: Tìm kiếm món "Đậu nành Edamame" $\rightarrow$ Thêm vào bữa trưa $\rightarrow$ Vòng tròn calo nhảy số tức thì $\rightarrow$ Báo chuẩn vùng sống thọ dưới 80% no.
 
 ### 3. TASKLIST TRẦN ANH KIỆT
-- [x] **Backend Fasting**: Viết `FastingController` (`/start`, `/{id}/end`, `/active`).
-- [x] **gRPC Server**: Tạo file `diet_fasting.proto`, triển khai `DietFastingGrpcServer` mở cổng `7002` phản hồi dữ liệu nhịn ăn và dinh dưỡng qua HTTP/2.
-- [x] **Hangfire Jobs**: Viết `JobService.API` với `FastingScheduleJob` và endpoint kích hoạt `/jobs/trigger/fasting-check`.
+- [x] **Backend Fasting**: `FastingController` (`/start`, `/{id}/end`, `/{id}/cancel`, `/active`); `UserId` lấy từ JWT, kiểm tra chủ phiên (403), validate đầu vào (400), invariant 1 phiên `InProgress`/user (409). *(đã kiểm chứng với DB thật)*
+- [x] **gRPC Server**: `Grpc.AspNetCore` + compile `diet_fasting.proto`; `DietFastingGrpcService` (3 RPC) chạy HTTP/2 ở cổng `7002` (REST ở `5002`). *(đã kiểm chứng bằng client thật, có dữ liệu thật)*
+- [x] **RabbitMQ Publisher thật**: `RabbitMqEventBus` (DietFasting) và `RabbitMqJobPublisher` (JobService) publish vào exchange `longevity_events_exchange` (topic, durable). Broker tắt thì API vẫn chạy, có cooldown 30 giây.
+- [x] **Hangfire thật**: Hangfire + PostgreSQL (`job_db`), dashboard `/hangfire`, 3 recurring job, endpoint trigger thủ công. *(đã kiểm chứng)*
+- [x] **Consumer nhắc nhở nhịn ăn**: `FastingScheduleTriggerConsumer` (queue `diet_fasting_trigger_queue`) + `FastingReminderService`; chống gửi trùng bằng Redis `SET NX` (TTL 48 giờ, có fallback in-memory); publish `notification.email`. *(đã kiểm chứng đến tận email trong Mailpit)*
 - [x] **Frontend Fasting**: Khung giao diện `src/features/fasting/FastingView.jsx` đã được dựng sẵn sang trọng.
 - [ ] **Nối API Frontend Fasting**: Mở file `src/features/fasting/fastingApi.js`, gọi `/api/fasting/start` và gắn state vào nút "Bắt đầu nhịn ăn".
 - [ ] **Demo sáng thứ Hai**: Bấm bắt đầu nhịn ăn 16/8 $\rightarrow$ Đồng hồ chạy $\rightarrow$ Mở Swagger JobService bấm Trigger job kiểm tra nền.
@@ -698,3 +704,136 @@ classDiagram
 - [ ] Tạo PR nhánh `quoc` → `dev`
 
 > **Đồng bộ `TASK_LIST.md`**: task 1.5 (C3) và 2.5 do Khôi, task 1.5 (C4) và 3.4 do Quốc; Vy không còn nhận phần vẽ sơ đồ.
+
+---
+
+## 10. GHI CHÚ CHO QUỐC — NHỮNG THAY ĐỔI CỦA KIỆT CÓ THỂ ẢNH HƯỞNG PHẦN FMD & NOTIFICATION
+
+> **Người ghi**: Kiệt (nhánh `kiet`). **Mục đích**: để Quốc biết trước, tránh bất ngờ khi pull code và khi demo sáng Thứ 2.  
+> Mỗi mục có nhãn: **[ĐÃ LÀM]** (đã có trên nhánh `kiet`) hoặc **[SẮP LÀM]** (dự kiến, chưa có code).
+
+### 10.1. Email cảnh báo FMD giờ sẽ bắn thật **[ĐÃ LÀM]**
+- Trước đây `IEventBus` của DietFasting chưa được đăng ký nên `_eventBus == null` → `fmd.alert` **không bao giờ** được publish. Nay đã có `RabbitMqEventBus` (file `DietFasting.Infrastructure/Core/Messaging/RabbitMqEventBus.cs`).
+- Khi log bữa ăn vượt ngưỡng trong chu kỳ FMD → publish `FmdCycleAlertIntegrationEvent` với routing key **`fmd.alert`** → consumer của Quốc nhận → email xuất hiện ở Mailpit (`http://localhost:8025`). Đúng kịch bản demo Workflow 2.
+- **Cần chú ý khi test:**
+  - Phải **bật RabbitMQ trước, rồi mới chạy Notification.API**. `RabbitMqNotificationConsumer.StartAsync` chỉ kết nối **một lần**; nếu lúc khởi động RabbitMQ chưa sẵn sàng thì consumer ở trạng thái idle vĩnh viễn (không retry). Gặp tình huống này thì khởi động lại Notification.API.
+  - Người nhận email đang hardcode `user@example.com` trong consumer → Mailpit vẫn nhận được vì nó bắt mọi địa chỉ.
+  - Alert hiện được publish **trước** `SaveChanges` trong `MealService` (code cũ của phần Meals). Nếu lưu DB lỗi thì email vẫn đã gửi. Không phải lỗi mới, chỉ cần biết.
+
+### 10.2. Chu kỳ FMD không tự sang ngày mới **[ĐÃ CÓ SẴN, CHƯA AI XỬ LÝ]**
+- `FmdCycle.AdvanceDay()` (`DietFasting.Domain/Entities/DietEntities.cs`) **không có chỗ nào gọi** → `CurrentDay` luôn là 1.
+- Hệ quả khi demo: chỉ minh họa được **ngày 1 (1.100 kcal)**. Muốn demo ngày 2–5 (725 kcal) phải tự gọi `AdvanceDay()` hoặc sửa dữ liệu DB.
+- **[ĐÃ LÀM]** Hangfire của JobService mỗi ngày 00:00 UTC publish `fasting.schedule.trigger` với `JobName = "FmdCycleDailyJob"`. Phía DietFasting đã nhận được và hiện chỉ ghi log `received but no handler is registered` (đã kiểm chứng).
+- **Kiệt KHÔNG xử lý logic FMD trong consumer của Kiệt** vì module FMD là của Quốc. Nếu Quốc muốn chu kỳ tự chuyển ngày: viết 1 handler trong DietFasting nghe trigger đó rồi gọi `AdvanceDay()` cho các chu kỳ `Active`. Hỏi Kiệt nếu cần mẫu consumer (Kiệt sẽ có sẵn consumer cho `FastingScheduleJob` để tham khảo).
+
+### 10.3. Cổng chạy DietFasting đã đổi **[ĐÃ LÀM]**
+- REST: `http://localhost:5002` (Swagger: `http://localhost:5002/swagger`), gRPC: `http://localhost:7002`. Cổng cũ `5083` **không còn dùng**.
+- Nếu Quốc test FMD bằng Postman/Swagger đã lưu URL `5083` thì phải đổi sang `5002`.
+- Tương tự, **Notification.API** đang chạy `5264` (theo `launchSettings.json`) nhưng Gateway route tới `5004`. Nếu gọi qua Gateway mà lỗi thì sửa cổng Notification về `5004` (Kiệt đã làm cách này cho DietFasting: cấu hình Kestrel trong `Program.cs`).
+
+### 10.4. File chung dễ bị merge conflict **[ĐÃ LÀM]**
+Kiệt đã sửa các file dưới đây trong `DietFasting` — Quốc cũng làm việc với FMD ở **cùng file**:
+
+| File | Kiệt đã sửa | Quốc dễ đụng |
+| :--- | :--- | :--- |
+| `DietFasting.API/Controllers/DietControllers.cs` | `FastingController` | `FmdController`, `FmdRulesController` |
+| `DietFasting.Application/Services/DietApplicationServices.cs` | `FastingService` | `FmdService`, `FmdRuleService` |
+| `DietFasting.Application/Services/IDietServices.cs` | `IFastingService` | `IFmdService`, `IFmdRuleService` |
+| `DietFasting.Application/DTOs/DietDtos.cs` | DTO Fasting | DTO FMD |
+| `DietFasting.Domain/Entities/DietEntities.cs` | `FastingSession` | `FmdCycle`, `FmdRule` |
+| `DietFasting.Domain/Exceptions/DietExceptions.cs` | thêm 2 exception | exception FMD |
+| `DietFasting.Infrastructure/Configurations/DietConfigurations.cs` | `FastingSessionConfiguration` (cột email, unique index) | cấu hình FMD |
+| `DietFasting.Infrastructure/Database/DietDbContext.cs` | override `SaveChangesAsync` (dịch lỗi trùng khóa thành 409) | — |
+| `DietFasting.Infrastructure/Migrations/*` | **sinh lại toàn bộ** `InitialDietDb` + snapshot | **mọi bảng FMD**: cần `git merge` rồi tạo lại DB |
+| `DietFasting.Infrastructure/DependencyInjection.cs` | đăng ký `IEventBus` | — |
+| `DietFasting.API/Program.cs` | Kestrel + gRPC | — |
+
+- **Khuyến nghị:** sau khi Kiệt merge vào `dev`, Quốc chạy `git fetch origin dev && git merge origin/dev` **sớm** (trước khi sửa tiếp các file trên) để conflict hiện ra từ đầu, giải quyết khi còn ít thay đổi.
+- Kiệt chỉ sửa trong phạm vi `FastingSession` / `FastingController` / `FastingService`, **không đụng vào code FMD**.
+
+### 10.5. ⚠️ Schema `diet_db` ĐÃ ĐỔI: Quốc phải tạo lại database sau khi pull **[ĐÃ LÀM]**
+- Kiệt **đã sinh lại migration `InitialDietDb`** (xem mục 11.1) vì bản cũ lệch tên cột với code (mọi API DietFasting đều lỗi 500 trên DB tạo từ migration cũ) và còn thiếu bảng `fmd_rules`.
+- Bản mới thêm cột `fasting_sessions.notification_email` và unique index `ux_fasting_sessions_user_active`.
+- **Quốc (và Vy, Khôi) phải xóa và tạo lại `diet_db`** (lệnh ở mục 11.1). DB cũ không dùng tiếp được. DB mới chạy được cả phần FMD (`fmd_rules`, `fmd_cycles`) của Quốc.
+- Chống gửi trùng email nhắc nhở nhịn ăn dùng **Redis** (`fasting:reminder:{sessionId}`).
+
+### 10.6. Event Quốc nhận từ Kiệt **[ĐÃ LÀM, ĐÃ KIỂM CHỨNG]**
+- Consumer DietFasting của Kiệt (nhắc nhở nhịn ăn sắp kết thúc) publish `SendEmailNotificationIntegrationEvent` với routing key **`notification.email`** — đây là **loại event consumer của Quốc đã xử lý**, nên **Quốc không phải sửa code**. Đã chạy thật: `Notification.API` nhận event, ghi `notification_logs` (`status = Sent`, có `event_id`) và email xuất hiện trong Mailpit.
+- Mỗi nhắc nhở tạo 1 `NotificationLog` và 1 email ở Mailpit. `RecipientEmail` là **email trong JWT của người dùng** (lưu lúc bắt đầu phiên), chỉ dùng `user@example.com` khi token không có email (mục 11.4).
+- Idempotency: `EventId` của email nhắc nhở là **cố định theo phiên nhịn ăn**, nên nếu event bị gửi lại thì `HasEventBeenProcessedAsync` của Quốc loại bản trùng.
+- Nhắc nhở gửi kiểu **mandatory**: nếu `Notification.API` chưa chạy (chưa có queue `notification_events_queue`) thì nhắc nhở được hoãn và gửi lại ở lần trigger kế tiếp. Quốc cứ bật Notification là nhận được.
+
+### 10.7. Những điểm trong Notification nên kiểm tra / cải thiện (không do Kiệt gây ra)
+- Chỉ bind `notification.#`, `advice.#`, `fmd.#`. Các event sau **hiện không ai nhận** (kể cả khi đã được publish): `fasting.started`, `fasting.completed`, `meal.logged`, `consultation.booked`, `user.registered`.  
+  → Nếu muốn demo email xác nhận đặt lịch (Bảng 8, event 6) cần thêm binding **`consultation.#`** + một nhánh xử lý.
+- Khi xử lý lỗi dùng `BasicNack(requeue: false)` → message bị **mất**, không retry. Chấp nhận được cho demo, nhưng nên biết.
+- `NotificationService` chưa kiểm tra `NotificationPreference` (`FastingRemindersEnabled`, ...) trước khi gửi.
+- Exchange phải khai báo **giống hệt** phía publisher: tên `longevity_events_exchange`, kiểu `topic`, `durable: true`. Đổi khác sẽ gây lỗi `PRECONDITION_FAILED` khi khai báo lại.
+- Consumer deserialize bằng `JsonSerializer` mặc định (**phân biệt hoa thường**, PascalCase). Không đổi sang `camelCase` nếu không đổi cả phía publisher.
+
+### 10.8. Checklist cho Quốc trước buổi demo
+- [ ] Đã `git merge origin/dev` sau khi Kiệt merge, build lại `dotnet build` không lỗi.
+- [ ] Bật `docker compose up -d` (RabbitMQ, Mailpit, Redis, Postgres) **trước** khi chạy `Notification.API`.
+- [ ] Chạy DietFasting ở `:5002`, Notification ở `:5004` (hoặc sửa Gateway cho khớp).
+- [ ] Test: tạo chu kỳ FMD → log bữa ăn 1.200 kcal ngày 1 → thấy email cảnh báo ở `http://localhost:8025`.
+- [ ] Quyết định có làm handler chuyển ngày FMD (mục 10.2) hay chỉ demo ngày 1.
+- [ ] Quyết định có thêm binding `consultation.#` (mục 10.7) hay không.
+
+---
+
+## 11. PHÁT HIỆN KHI KIỂM CHỨNG (KIỆT, 15/11/2026) — CẢNH BÁO CHUNG CHO CẢ NHÓM
+
+### 11.1. ⚠️ Migration `Initial*Db` đang lệch với code: DB tạo từ migration KHÔNG chạy được
+**Hiện tượng:** chạy `dotnet ef database update` theo migration đã commit rồi gọi bất kỳ API nào của DietFasting đều lỗi 500:
+```
+Npgsql.PostgresException 42703: column f.id does not exist
+Hint: Perhaps you meant to reference the column "f.Id".
+```
+**Nguyên nhân:** cả 4 migration (`InitialIdentityDb`, `InitialDietDb`, `InitialConsultationDb`, `InitialNotificationDb`) tạo **tên cột PascalCase** (`"Id"`, `"UserId"`, `"TargetEndTimeUtc"`…), trong khi code chạy dùng `.UseSnakeCaseNamingConvention()` (AGENT.md 3.2) nên truy vấn tìm cột `id`, `user_id`… Ngoài ra `InitialDietDb` còn khai báo cột enum là `integer` trong khi model lưu enum dạng chuỗi (`character varying(50)`).
+**Ai bị ảnh hưởng:** **tất cả** (Khoa/Identity, Vy/Meals, Kiệt/Fasting, Quốc/FMD + Notification, Khôi/Consultation) ngay khi chạy backend với DB thật. Frontend hiện không lộ lỗi vì có mock fallback.
+**Cách tránh tạm thời (không sửa repo)** để test local: tạo schema trực tiếp từ model bằng `Database.EnsureCreated()` (đúng tên cột snake_case), ví dụ chạy một console nhỏ dùng `DbContextOptionsBuilder<XxxDbContext>().UseNpgsql(...).UseSnakeCaseNamingConvention()` rồi gọi `EnsureCreated()` trên DB trống.
+**Cách sửa đúng:** vì DB chưa có dữ liệu thật, xóa thư mục `Migrations/` rồi sinh lại `dotnet ef migrations add Initial...` cho từng service.
+
+> ✅ **Đã sửa cho `diet_db` (DietFasting)** trên nhánh `kiet`: migration `InitialDietDb` được sinh lại, cột đúng snake_case, enum là `varchar(50)`, có thêm cột `notification_email` và unique index. Migration cũ còn **thiếu cả bảng `fmd_rules`**, bản mới đã có.  
+> ⚠️ **Mọi người dùng DietFasting (Vy, Quốc, Khôi, Kiệt) phải tạo lại `diet_db`** sau khi pull, vì lịch sử migration đã đổi (DB cũ có tên cột PascalCase):
+> ```bash
+> dotnet ef database drop --project src/Services/DietFasting/DietFasting.Infrastructure --startup-project src/Services/DietFasting/DietFasting.API --force
+> dotnet ef database update --project src/Services/DietFasting/DietFasting.Infrastructure --startup-project src/Services/DietFasting/DietFasting.API
+> ```
+> Hoặc xóa database `diet_db` thủ công rồi chạy `dotnet ef database update`. **Vẫn còn lỗi ở `identity_db`, `consultation_db`, `notification_db`** (chưa sửa, thuộc phần Khoa, Khôi, Quốc).
+
+### 11.2. Cổng 5432 / 6379 có thể bị chiếm bởi dự án khác
+`docker compose up -d` của dự án map `5432` (Postgres) và `6379` (Redis). Nếu máy đang chạy container của dự án khác dùng các cổng này thì compose sẽ lỗi hoặc backend nối nhầm DB. Cách kiểm tra: `docker ps` xem cổng đang bị chiếm; có thể đổi cổng host trong `docker-compose.yml` và truyền connection string bằng biến môi trường (`ConnectionStrings__DietDb`, `ConnectionStrings__Redis`, `ConnectionStrings__JobDb`).
+
+### 11.3. Những gì đã kiểm chứng thật (stack: Postgres + Redis + RabbitMQ + Mailpit)
+| # | Kịch bản | Kết quả |
+| :-: | :--- | :--- |
+| 1 | Fasting: start / active / end / cancel, 409, 400, 403, 404 | ✅ đúng mã trạng thái |
+| 2 | Event `fasting.started`, `fasting.completed` ra RabbitMQ | ✅ có message, JSON PascalCase |
+| 3 | gRPC `:7002` với dữ liệu thật (`totalCompletedFasts`, `totalFastedHours`), lỗi `InvalidArgument` | ✅ |
+| 4 | Hangfire: 3 recurring job đăng ký, `/hangfire` HTTP 200, job bền qua restart | ✅ |
+| 5 | `POST /jobs/trigger/*` → message `fasting.schedule.trigger`, tới DietFasting sau ~1 giây | ✅ |
+| 6 | Nhắc nhở: phiên sắp hết → 1 event `notification.email`; trigger lần 2 → 0 (Redis key TTL ~48h) | ✅ |
+| 7 | `Notification.API` nhận event → `notification_logs.status = Sent` → email trong Mailpit | ✅ |
+| 8 | RabbitMQ tắt: API vẫn 201/200 (lần đầu ~4 giây vì timeout, các lần sau ~17ms nhờ cooldown 30 giây); bật lại thì consumer tự nối lại | ✅ |
+| 9 | Trigger FMD / tuần → DietFasting ghi log "no handler" (chủ đích) | ✅ |
+
+### 11.4. Bốn hạn chế của phần nhắc nhở nhịn ăn và cách đã xử lý (Kiệt, 15/11/2026)
+| # | Hạn chế trước đây | Cách xử lý | Trạng thái |
+| :-: | :--- | :--- | :---: |
+| 1 | Email người nhận luôn là `user@example.com` | Lúc `start`, đọc claim **email trong JWT** (Identity đã đưa vào token) và lưu vào cột mới `fasting_sessions.notification_email`; nhắc nhở gửi tới địa chỉ này. Token không có email thì dùng địa chỉ mặc định. Không gọi sang Identity, đúng Database-per-Service. | ✅ đã kiểm chứng |
+| 2 | Nhắc nhở at-most-once (broker lỗi đúng lúc là mất) | (a) Bus dùng **publisher confirms** + `mandatory`; `IReliableEventBus.TryPublishAsync` chỉ trả `true` khi broker đã nhận **và có queue nhận**. (b) Dedup 3 bước: lấy lease 2 phút → publish → thành công thì commit (TTL 48 giờ), thất bại thì **nhả khóa** để lần trigger 15 phút sau gửi lại. (c) **Id event cố định** theo phiên nhịn ăn, nên nếu gửi lại sau sự cố thì Notification (`HasEventBeenProcessedAsync`) loại bản trùng. Kết quả: **at-least-once** cho nhắc nhở, vẫn không gửi trùng ra email. Chưa dùng Outbox cho `fasting.started/completed` (các event này vẫn là best-effort). | ✅ đã kiểm chứng |
+| 3 | 2 request `start` đồng thời tạo 2 phiên | **Unique index một phần** `ux_fasting_sessions_user_active` (`UNIQUE (user_id) WHERE status = 'InProgress'`). Vi phạm trùng khóa (Postgres 23505) được `DietDbContext.SaveChangesAsync` dịch thành `ActiveFastingSessionAlreadyExistsException` → **HTTP 409**. | ✅ 10 request song song → đúng 1 cái 201, 9 cái 409 |
+| 4 | gRPC `:7002` chưa có xác thực | Cờ cấu hình **`Grpc:RequireAuth`** (mặc định `false` để client hiện tại của Khôi không bị vỡ). Khi bật: bắt buộc JWT trong metadata `authorization`, chỉ role **Nutritionist/Admin** được gọi. | ✅ không token → `Unauthenticated`, role User → `PermissionDenied`, Nutritionist/Admin → OK |
+
+**Hướng dẫn bật xác thực gRPC (dành cho Khôi, `Consultation`):**
+1. Client phải gửi JWT của người gọi trong metadata:
+   ```csharp
+   var headers = new Grpc.Core.Metadata { { "authorization", $"Bearer {accessToken}" } };
+   var summary = await client.GetUserFastingSummaryAsync(request, headers);
+   ```
+2. Bắt `RpcException`: `Unauthenticated` (thiếu/sai token), `PermissionDenied` (role không đủ), `Unavailable` (DietFasting tắt).
+3. Server **không thể** kiểm tra Nutritionist có `ConsultationSession` hợp lệ với user đó hay không (khác database). **Consultation phải kiểm tra điều này trước khi gọi** (AGENT.md 4.3).
+4. Khi client đã gửi token: đặt `"Grpc": { "RequireAuth": true }` trong `appsettings` của `DietFasting.API`.
+
+**Hạn chế còn lại:** email chỉ có với phiên bắt đầu sau thay đổi này (phiên cũ dùng địa chỉ mặc định); `fasting.started/completed/meal.logged/fmd.alert` vẫn best-effort (chưa có Outbox); nếu email trong token thay đổi giữa chừng thì nhắc nhở vẫn dùng email lúc bắt đầu phiên.

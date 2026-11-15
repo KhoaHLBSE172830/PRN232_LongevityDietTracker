@@ -4,6 +4,16 @@
     <ProjectReference Include="..\BuildingBlocks.Common\BuildingBlocks.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Grpc.AspNetCore = server runtime + Google.Protobuf + Grpc.Tools + Grpc.Net.ClientFactory (client for Consultation) -->
+    <PackageReference Include="Grpc.AspNetCore" Version="2.62.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generates DietFastingGrpc.DietFastingGrpcBase (server) and DietFastingGrpc.DietFastingGrpcClient (client) -->
+    <Protobuf Include="Protos\diet_fasting.proto" GrpcServices="Both" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using DietFasting.Domain.Enums;
 
 namespace DietFasting.Application.DTOs;
@@ -52,11 +53,19 @@ public record MealLogResponseDto(
     List<FoodItemDto> FoodItems);
 
 // Fasting Session DTOs
+// UserId in the body is ignored by the API: the owner is always taken from the JWT token (AGENT.md 4.3).
+// StartTimeUtc is optional (default = now); it may be back-dated but not more than 5 minutes in the future.
 public record StartFastingRequestDto(
     Guid UserId,
     FastingType FastingType,
     DateTime StartTimeUtc,
-    double DurationHours);
+    [Range(0.5, 168, ErrorMessage = "DurationHours must be between 0.5 and 168.")] double DurationHours);
+
+public record EndFastingRequestDto(
+    [MaxLength(500)] string? MoodNotes = null);
+
+public record CancelFastingRequestDto(
+    [MaxLength(500)] string? Reason = null);
 
 public record FastingSessionResponseDto(
     Guid Id,

@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using BuildingBlocks.Common.Exceptions;
 using BuildingBlocks.Common.ResponseCode;
 using DietFasting.Application.DTOs;
 using DietFasting.Application.Services;
@@ -46,24 +48,44 @@ public class FastingController : ControllerBase
         _fastingService = fastingService;
     }
 
+    // AGENT.md 4.3: the owner is ALWAYS the authenticated user (JWT), never a value sent by the client.
+    private Guid CurrentUserId =>
+        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id)
+            ? id
+            : throw new UnauthorizedException("Token does not contain a valid user id.");
+
+    // Reminder e-mails go to the address in the JWT (Identity puts it there); Diet & Fasting cannot query Identity's database.
+    private string? CurrentUserEmail =>
+        User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
+
     [HttpPost("start")]
-    public async Task<IActionResult> StartFasting([FromBody] StartFastingRequestDto dto)
+    public async Task<IActionResult> StartFasting([FromBody] StartFastingRequestDto dto, CancellationToken cancellationToken)
     {
-        var result = await _fastingService.StartFastingAsync(dto);
+        var result = await _fastingService.StartFastingAsync(dto with { UserId = CurrentUserId }, CurrentUserEmail, cancellationToken);
         return SuccessResp.Created(result, "Fasting session started successfully");
     }
 
     [HttpPost("{sessionId:guid}/end")]
-    public async Task<IActionResult> EndFasting(Guid sessionId)
+    public async Task<IActionResult> EndFasting(Guid sessionId, [FromBody] EndFastingRequestDto? dto, CancellationToken cancellationToken)
     {
-        var result = await _fastingService.EndFastingAsync(sessionId);
+        var result = await _fastingService.EndFastingAsync(sessionId, CurrentUserId, dto?.MoodNotes, cancellationToken);
         return SuccessResp.Ok(result, "Fasting session completed successfully");
     }
 
-    [HttpGet("user/{userId:guid}/active")]
-    public async Task<IActionResult> GetActiveSession(Guid userId)
+    [HttpPost("{sessionId:guid}/cancel")]
+    public async Task<IActionResult> CancelFasting(Guid sessionId, [FromBody] CancelFastingRequestDto? dto, CancellationToken cancellationToken)
     {
-        var result = await _fastingService.GetActiveFastingSessionAsync(userId);
+        var result = await _fastingService.CancelFastingAsync(sessionId, CurrentUserId, dto?.Reason, cancellationToken);
+        return SuccessResp.Ok(result, "Fasting session cancelled");
+    }
+
+    [HttpGet("user/{userId:guid}/active")]
+    public async Task<IActionResult> GetActiveSession(Guid userId, CancellationToken cancellationToken)
+    {
+        if (userId != CurrentUserId)
+            throw new ForbiddenException("You can only view your own fasting session.");
+
+        var result = await _fastingService.GetActiveFastingSessionAsync(userId, cancellationToken);
         return SuccessResp.Ok(result);
     }
 }

@@ -122,60 +122,95 @@ public class FastingService : IFastingService
         _eventBus = eventBus;
     }
 
-    public async Task<FastingSessionResponseDto> StartFastingAsync(StartFastingRequestDto dto)
+    public async Task<FastingSessionResponseDto> StartFastingAsync(StartFastingRequestDto dto, string? notificationEmail = null, CancellationToken cancellationToken = default)
     {
+        // Cheap validation first (no DB round-trip for bad input).
+        var now = DateTime.UtcNow;
+        var startTime = dto.StartTimeUtc == default ? now : NormalizeToUtc(dto.StartTimeUtc);
+        if (startTime > now.AddMinutes(5))
+            throw new InvalidFastingSessionException("StartTimeUtc cannot be in the future.");
+
+        var session = FastingSession.Create(dto.UserId, dto.FastingType, startTime, dto.DurationHours, notificationEmail);
+
+        // AGENT.md Invariant 4.1: at most ONE session in "InProgress" per user.
         var active = await _fastingRepository.GetActiveSessionAsync(dto.UserId);
         if (active != null)
             throw new ActiveFastingSessionAlreadyExistsException(dto.UserId);
 
-        var session = FastingSession.Create(dto.UserId, dto.FastingType, dto.StartTimeUtc, dto.DurationHours);
-
         await _fastingRepository.CreateAsync(session);
-        await _unitOfWork.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         if (_eventBus != null)
         {
             await _eventBus.PublishAsync(new FastingStartedIntegrationEvent(
-                session.Id, session.UserId, session.FastingType.ToString(), session.StartTimeUtc, session.TargetEndTimeUtc));
+                session.Id, session.UserId, session.FastingType.ToString(), session.StartTimeUtc, session.TargetEndTimeUtc),
+                cancellationToken);
         }
 
-        return new FastingSessionResponseDto(
-            session.Id, session.UserId, session.FastingType, session.StartTimeUtc,
-            session.TargetEndTimeUtc, null, session.Status, null);
+        return MapToDto(session);
     }
 
-    public async Task<FastingSessionResponseDto> EndFastingAsync(Guid sessionId)
+    public async Task<FastingSessionResponseDto> EndFastingAsync(Guid sessionId, Guid requesterUserId, string? moodNotes = null, CancellationToken cancellationToken = default)
     {
-        var session = await _fastingRepository.FindByIdAsync(sessionId);
-        if (session == null)
-            throw new FastingSessionNotFoundException(sessionId);
+        var session = await GetOwnedSessionAsync(sessionId, requesterUserId);
 
-        session.Complete(DateTime.UtcNow);
+        session.Complete(DateTime.UtcNow, moodNotes);
 
         await _fastingRepository.UpdateAsync(session);
-        await _unitOfWork.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         if (_eventBus != null)
         {
             await _eventBus.PublishAsync(new FastingCompletedIntegrationEvent(
                 session.Id, session.UserId, session.FastingType.ToString(),
-                session.StartTimeUtc, session.ActualEndTimeUtc!.Value, session.ActualFastedHours ?? 0));
+                session.StartTimeUtc, session.ActualEndTimeUtc!.Value, session.ActualFastedHours ?? 0),
+                cancellationToken);
         }
 
-        return new FastingSessionResponseDto(
-            session.Id, session.UserId, session.FastingType, session.StartTimeUtc,
-            session.TargetEndTimeUtc, session.ActualEndTimeUtc, session.Status, session.ActualFastedHours, session.MoodNotes);
+        return MapToDto(session);
     }
 
-    public async Task<FastingSessionResponseDto?> GetActiveFastingSessionAsync(Guid userId)
+    public async Task<FastingSessionResponseDto> CancelFastingAsync(Guid sessionId, Guid requesterUserId, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        var session = await GetOwnedSessionAsync(sessionId, requesterUserId);
+
+        session.Cancel(reason);
+
+        await _fastingRepository.UpdateAsync(session);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return MapToDto(session);
+    }
+
+    public async Task<FastingSessionResponseDto?> GetActiveFastingSessionAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var session = await _fastingRepository.GetActiveSessionAsync(userId);
-        if (session == null) return null;
-
-        return new FastingSessionResponseDto(
-            session.Id, session.UserId, session.FastingType, session.StartTimeUtc,
-            session.TargetEndTimeUtc, session.ActualEndTimeUtc, session.Status, session.ActualFastedHours, session.MoodNotes);
+        return session == null ? null : MapToDto(session);
     }
+
+    private async Task<FastingSession> GetOwnedSessionAsync(Guid sessionId, Guid requesterUserId)
+    {
+        var session = await _fastingRepository.FindByIdAsync(sessionId)
+            ?? throw new FastingSessionNotFoundException(sessionId);
+
+        // AGENT.md 4.3: a User may only touch their own data.
+        if (session.UserId != requesterUserId)
+            throw new FastingSessionAccessDeniedException();
+
+        return session;
+    }
+
+    // Npgsql only accepts DateTime with Kind=Utc for "timestamp with time zone".
+    private static DateTime NormalizeToUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    private static FastingSessionResponseDto MapToDto(FastingSession s) => new(
+        s.Id, s.UserId, s.FastingType, s.StartTimeUtc, s.TargetEndTimeUtc,
+        s.ActualEndTimeUtc, s.Status, s.ActualFastedHours, s.MoodNotes);
 }
 
 public class FmdService : IFmdService

@@ -1,5 +1,6 @@
 using BuildingBlocks.Common.Entities;
 using DietFasting.Domain.Enums;
+using DietFasting.Domain.Exceptions;
 
 namespace DietFasting.Domain.Entities;
 
@@ -86,6 +87,12 @@ public class FastingSession : BaseEntity
     public FastingStatus Status { get; set; } = FastingStatus.InProgress;
     public string? MoodNotes { get; set; }
 
+    /// <summary>
+    /// E-mail used for fasting reminders. Copied from the user's JWT when the session starts, because Diet &amp; Fasting
+    /// cannot query Identity (Database-per-Service). Null when the token carried no usable e-mail.
+    /// </summary>
+    public string? NotificationEmail { get; set; }
+
     public double TargetHours => (TargetEndTimeUtc - StartTimeUtc).TotalHours;
     public double? ActualFastedHours => ActualEndTimeUtc.HasValue 
         ? (ActualEndTimeUtc.Value - StartTimeUtc).TotalHours 
@@ -93,22 +100,45 @@ public class FastingSession : BaseEntity
 
     public FastingSession() { }
 
-    public static FastingSession Create(Guid userId, FastingType type, DateTime startTime, double durationHours)
+    public const double MinDurationHours = 0.5;
+    public const double MaxDurationHours = 168; // 7 days
+
+    public const int MaxEmailLength = 256;
+
+    public static FastingSession Create(Guid userId, FastingType type, DateTime startTime, double durationHours, string? notificationEmail = null)
     {
+        if (userId == Guid.Empty)
+            throw new InvalidFastingSessionException("UserId is required.");
+        if (!Enum.IsDefined(type))
+            throw new InvalidFastingSessionException($"Fasting type '{(int)type}' is not supported.");
+        if (double.IsNaN(durationHours) || durationHours < MinDurationHours || durationHours > MaxDurationHours)
+            throw new InvalidFastingSessionException(
+                $"Duration must be between {MinDurationHours} and {MaxDurationHours} hours.");
+
         return new FastingSession
         {
             UserId = userId,
             FastingType = type,
             StartTimeUtc = startTime,
             TargetEndTimeUtc = startTime.AddHours(durationHours),
-            Status = FastingStatus.InProgress
+            Status = FastingStatus.InProgress,
+            NotificationEmail = NormalizeEmail(notificationEmail)
         };
+    }
+
+    // Lenient on purpose: only drops values that cannot possibly be an address (reminder falls back to a default).
+    private static string? NormalizeEmail(string? email)
+    {
+        var trimmed = email?.Trim();
+        return string.IsNullOrEmpty(trimmed) || trimmed.Length > MaxEmailLength || !trimmed.Contains('@')
+            ? null
+            : trimmed;
     }
 
     public void Complete(DateTime actualEndTime, string? notes = null)
     {
         if (Status != FastingStatus.InProgress)
-            throw new InvalidOperationException($"Cannot complete session in '{Status}' status.");
+            throw new InvalidFastingSessionException($"Cannot complete session in '{Status}' status.");
 
         Status = FastingStatus.Completed;
         ActualEndTimeUtc = actualEndTime;
@@ -119,7 +149,7 @@ public class FastingSession : BaseEntity
     public void Cancel(string? reason = null)
     {
         if (Status != FastingStatus.InProgress)
-            throw new InvalidOperationException($"Cannot cancel session in '{Status}' status.");
+            throw new InvalidFastingSessionException($"Cannot cancel session in '{Status}' status.");
 
         Status = FastingStatus.Cancelled;
         ActualEndTimeUtc = DateTime.UtcNow;

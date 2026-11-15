@@ -10,9 +10,11 @@ public interface IMealService
 
 public interface IFastingService
 {
-    Task<FastingSessionResponseDto> StartFastingAsync(StartFastingRequestDto dto);
-    Task<FastingSessionResponseDto> EndFastingAsync(Guid sessionId);
-    Task<FastingSessionResponseDto?> GetActiveFastingSessionAsync(Guid userId);
+    /// <param name="notificationEmail">E-mail taken from the caller's JWT; used for fasting reminders.</param>
+    Task<FastingSessionResponseDto> StartFastingAsync(StartFastingRequestDto dto, string? notificationEmail = null, CancellationToken cancellationToken = default);
+    Task<FastingSessionResponseDto> EndFastingAsync(Guid sessionId, Guid requesterUserId, string? moodNotes = null, CancellationToken cancellationToken = default);
+    Task<FastingSessionResponseDto> CancelFastingAsync(Guid sessionId, Guid requesterUserId, string? reason = null, CancellationToken cancellationToken = default);
+    Task<FastingSessionResponseDto?> GetActiveFastingSessionAsync(Guid userId, CancellationToken cancellationToken = default);
 }
 
 public interface IFmdService

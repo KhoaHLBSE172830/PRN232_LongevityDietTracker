@@ -37,6 +37,9 @@ public class MealFoodItemConfiguration : IEntityTypeConfiguration<MealFoodItem>
 
 public class FastingSessionConfiguration : IEntityTypeConfiguration<FastingSession>
 {
+    /// <summary>Partial unique index enforcing "at most ONE InProgress session per user" at database level.</summary>
+    public const string ActiveSessionIndexName = "ux_fasting_sessions_user_active";
+
     public void Configure(EntityTypeBuilder<FastingSession> builder)
     {
         builder.ToTable("fasting_sessions");
@@ -44,8 +47,15 @@ public class FastingSessionConfiguration : IEntityTypeConfiguration<FastingSessi
         builder.Property(f => f.FastingType).HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(f => f.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(f => f.MoodNotes).HasMaxLength(500);
+        builder.Property(f => f.NotificationEmail).HasMaxLength(FastingSession.MaxEmailLength);
 
         builder.HasIndex(f => new { f.UserId, f.Status });
+
+        // Status is stored as text (HasConversion<string>), so the filter compares with the enum name.
+        builder.HasIndex(f => f.UserId)
+            .IsUnique()
+            .HasDatabaseName(ActiveSessionIndexName)
+            .HasFilter("status = 'InProgress'");
     }
 }
 
