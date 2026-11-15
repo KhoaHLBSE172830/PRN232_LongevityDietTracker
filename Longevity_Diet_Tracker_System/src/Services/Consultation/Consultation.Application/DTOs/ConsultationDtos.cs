@@ -3,6 +3,15 @@ using Consultation.Domain.Enums;
 
 namespace Consultation.Application.DTOs;
 
+public record NutritionistProfileDto(
+    Guid Id,
+    Guid UserId,
+    string FullName,
+    string Certification,
+    string Specialization,
+    string Bio,
+    bool IsVerified);
+
 public record BookConsultationDto(
     Guid UserId,
     Guid NutritionistId,
@@ -16,7 +25,8 @@ public record ConsultationSessionDto(
     DateTime ScheduledAtUtc,
     int DurationMinutes,
     ConsultationStatus Status,
-    string? Notes);
+    string? Notes,
+    string? NutritionistName = null);
 
 public record SendAdviceDto(
     Guid ConsultationSessionId,
@@ -34,7 +44,8 @@ public record AdviceNoteDto(
     string AdviceSummary,
     string DietaryRecommendations,
     string FastingRecommendations,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? NutritionistName = null);
 
 public record UserHealthReviewDto(
     Guid UserId,

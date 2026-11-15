@@ -11,15 +11,19 @@ namespace Consultation.Application.Services;
 
 public interface IConsultationService
 {
+    Task<List<NutritionistProfileDto>> GetNutritionistsAsync();
     Task<ConsultationSessionDto> BookSessionAsync(BookConsultationDto dto);
+    Task<List<ConsultationSessionDto>> GetUserSessionsAsync(Guid userId);
     Task<List<ConsultationSessionDto>> GetNutritionistSessionsAsync(Guid nutritionistId);
     Task<AdviceNoteDto> SendAdviceAsync(SendAdviceDto dto);
+    Task<List<AdviceNoteDto>> GetUserAdvicesAsync(Guid userId);
     Task<UserHealthReviewDto> ReviewUserDietProgressAsync(Guid userId);
 }
 
 public class ConsultationService : IConsultationService
 {
     private readonly IConsultationSessionRepository _sessionRepository;
+    private readonly INutritionistProfileRepository _nutritionistRepository;
     private readonly IAdviceNoteRepository _adviceRepository;
     private readonly BuildingBlocks.Common.Repositories.IUnitOfWork _unitOfWork;
     private readonly IDietFastingGrpcClientService _dietFastingGrpcClient;
@@ -27,28 +31,34 @@ public class ConsultationService : IConsultationService
 
     public ConsultationService(
         IConsultationSessionRepository sessionRepository,
+        INutritionistProfileRepository nutritionistRepository,
         IAdviceNoteRepository adviceRepository,
         BuildingBlocks.Common.Repositories.IUnitOfWork unitOfWork,
         IDietFastingGrpcClientService dietFastingGrpcClient,
         IEventBus? eventBus = null)
     {
         _sessionRepository = sessionRepository;
+        _nutritionistRepository = nutritionistRepository;
         _adviceRepository = adviceRepository;
         _unitOfWork = unitOfWork;
         _dietFastingGrpcClient = dietFastingGrpcClient;
         _eventBus = eventBus;
     }
 
+    public async Task<List<NutritionistProfileDto>> GetNutritionistsAsync()
+    {
+        var profiles = await _nutritionistRepository.GetVerifiedNutritionistsAsync();
+        return profiles.Select(p => new NutritionistProfileDto(
+            p.Id, p.UserId, p.FullName, p.Certification, p.Specialization, p.Bio, p.IsVerified)).ToList();
+    }
+
     public async Task<ConsultationSessionDto> BookSessionAsync(BookConsultationDto dto)
     {
-        var session = new ConsultationSession
-        {
-            UserId = dto.UserId,
-            NutritionistId = dto.NutritionistId,
-            ScheduledAtUtc = dto.ScheduledAtUtc,
-            Status = ConsultationStatus.Confirmed,
-            Notes = dto.Notes
-        };
+        var nutritionist = await _nutritionistRepository.FindByIdAsync(dto.NutritionistId);
+        if (nutritionist == null)
+            throw new NutritionistNotFoundException(dto.NutritionistId);
+
+        var session = ConsultationSession.Schedule(dto.UserId, dto.NutritionistId, dto.ScheduledAtUtc, 45, dto.Notes);
 
         await _sessionRepository.CreateAsync(session);
         await _unitOfWork.SaveChangesAsync();
@@ -61,15 +71,21 @@ public class ConsultationService : IConsultationService
 
         return new ConsultationSessionDto(
             session.Id, session.UserId, session.NutritionistId, session.ScheduledAtUtc,
-            session.DurationMinutes, session.Status, session.Notes);
+            session.DurationMinutes, session.Status, session.Notes, nutritionist.FullName);
+    }
+
+    public async Task<List<ConsultationSessionDto>> GetUserSessionsAsync(Guid userId)
+    {
+        var sessions = await _sessionRepository.GetByUserIdAsync(userId);
+        return sessions.Select(s => new ConsultationSessionDto(
+            s.Id, s.UserId, s.NutritionistId, s.ScheduledAtUtc, s.DurationMinutes, s.Status, s.Notes, s.Nutritionist?.FullName)).ToList();
     }
 
     public async Task<List<ConsultationSessionDto>> GetNutritionistSessionsAsync(Guid nutritionistId)
     {
         var sessions = await _sessionRepository.GetByNutritionistIdAsync(nutritionistId);
-
         return sessions.Select(s => new ConsultationSessionDto(
-            s.Id, s.UserId, s.NutritionistId, s.ScheduledAtUtc, s.DurationMinutes, s.Status, s.Notes)).ToList();
+            s.Id, s.UserId, s.NutritionistId, s.ScheduledAtUtc, s.DurationMinutes, s.Status, s.Notes, s.Nutritionist?.FullName)).ToList();
     }
 
     public async Task<AdviceNoteDto> SendAdviceAsync(SendAdviceDto dto)
@@ -78,18 +94,15 @@ public class ConsultationService : IConsultationService
         if (session == null)
             throw new ConsultationNotFoundException(dto.ConsultationSessionId);
 
-        var advice = new AdviceNote
-        {
-            ConsultationSessionId = dto.ConsultationSessionId,
-            UserId = dto.UserId,
-            NutritionistId = dto.NutritionistId,
-            AdviceSummary = dto.AdviceSummary,
-            DietaryRecommendations = dto.DietaryRecommendations,
-            FastingRecommendations = dto.FastingRecommendations
-        };
+        var advice = new AdviceNote(
+            dto.ConsultationSessionId,
+            dto.UserId,
+            dto.NutritionistId,
+            dto.AdviceSummary,
+            dto.DietaryRecommendations,
+            dto.FastingRecommendations);
 
-        session.Status = ConsultationStatus.Completed;
-        session.UpdatedAt = DateTime.UtcNow;
+        session.AttachAdvice(advice);
 
         await _adviceRepository.CreateAsync(advice);
         await _sessionRepository.UpdateAsync(session);
@@ -104,6 +117,14 @@ public class ConsultationService : IConsultationService
         return new AdviceNoteDto(
             advice.Id, advice.ConsultationSessionId, advice.UserId, advice.NutritionistId,
             advice.AdviceSummary, advice.DietaryRecommendations, advice.FastingRecommendations, advice.CreatedAt ?? DateTime.UtcNow);
+    }
+
+    public async Task<List<AdviceNoteDto>> GetUserAdvicesAsync(Guid userId)
+    {
+        var advices = await _adviceRepository.GetByUserIdAsync(userId);
+        return advices.Select(a => new AdviceNoteDto(
+            a.Id, a.ConsultationSessionId, a.UserId, a.NutritionistId,
+            a.AdviceSummary, a.DietaryRecommendations, a.FastingRecommendations, a.CreatedAt ?? DateTime.UtcNow)).ToList();
     }
 
     public async Task<UserHealthReviewDto> ReviewUserDietProgressAsync(Guid userId)
@@ -121,4 +142,5 @@ public class ConsultationService : IConsultationService
             await fmdTask);
     }
 }
+
 
