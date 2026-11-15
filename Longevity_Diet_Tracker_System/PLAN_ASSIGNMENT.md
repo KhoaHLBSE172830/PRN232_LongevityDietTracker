@@ -440,3 +440,261 @@ Khi một bạn muốn nối giao diện của mình vào backend vừa viết:
 > * **KHÔNG SỬA** các file trong thư mục `src/shared/` (Sidebar, Navbar, Theme, Layout...).
 > * **KHÔNG SỬA** file `*View.jsx` hay `*Api.js` của bạn khác.
 > * Chỉ code trong đúng thư mục `features/{tên_của_mình}/`. Nhờ đó, dù cả 5 bạn cùng sửa code cùng lúc thì khi Git merge cũng **không bao giờ bị báo đỏ hay xung đột dòng lệnh**!
+
+---
+
+## 9. KẾ HOẠCH VẼ SƠ ĐỒ C3 (COMPONENT) & C4 (CODE) — QUỐC & KHÔI
+
+> **Bối cảnh**: C1 (System Context) và C2 (Container) đã xong (Khoa + Kiệt). Còn thiếu **C3 và C4**. Theo `TASK_LIST.md` các task này là 1.5, 2.5, 3.4. Mục này **phân lại cho Quốc và Khôi** (Vy đang bận khung Frontend) và mô tả rõ phải vẽ cái gì.  
+> **Hạn nộp nội bộ**: **tối Chủ nhật 15/11/2026** để kịp đưa vào slide báo cáo sáng Thứ 2 (16/11).
+
+### 9.1. C3 và C4 là gì? (Có phải "vẽ ra" không?)
+
+**Có — C3 và C4 là các sơ đồ (hình ảnh) phải tự vẽ**, rồi chèn vào slide/báo cáo. Không phải viết thêm code. Bốn mức của C4 Model là "zoom" dần vào hệ thống:
+
+| Mức | Zoom vào | Câu hỏi sơ đồ trả lời | Trạng thái |
+| :---: | :--- | :--- | :---: |
+| C1 | Cả hệ thống + người dùng + hệ thống ngoài | "Hệ thống làm gì, ai dùng?" | ✅ Xong |
+| C2 | Các container (service, DB, Redis, RabbitMQ…) | "Hệ thống gồm những khối nào, nói chuyện bằng giao thức gì?" | ✅ Xong |
+| **C3** | **Bên trong 1 service**: các component (Controller, Service, Repository, Consumer, gRPC Client…) | "Một service được chia thành những phần nào, phần nào gọi phần nào?" | ⬜ **Quốc + Khôi** |
+| **C4** | **Bên trong code**: class, thuộc tính, method, quan hệ | "Các class trong Domain trông thế nào, liên kết ra sao?" | ⬜ **Quốc + Khôi** |
+
+#### C3 — Component Diagram (mỗi service 1 hình)
+Vẽ **4 tầng Onion** của service và các thành phần thật trong code, kèm mũi tên phụ thuộc (ngoài → trong) và mũi tên đi ra hệ thống ngoài (DB, RabbitMQ, gRPC, SMTP, Redis).
+
+Mỗi hộp (component) ghi: **Tên class/interface thật** + `[loại]` + 1 dòng mô tả. Ví dụ: `ConsultationService [Application Service] — điều phối đặt lịch, gửi lời khuyên`.
+
+Quy tắc vẽ:
+1. Chia 4 vùng: **API → Application → Infrastructure → Domain** (đúng `AGENT.md` mục 2).
+2. Mũi tên phụ thuộc chỉ đi **từ ngoài vào trong** (Infrastructure *implement* interface của Application/Domain).
+3. Có nhãn trên mũi tên: `HTTP`, `gRPC`, `AMQP (RabbitMQ)`, `SMTP`, `EF Core/Npgsql`.
+4. Vẽ cả **thế giới bên ngoài** mà service chạm tới (Gateway, DB riêng, service khác, broker) ở rìa hình.
+
+#### C4 — Code / Class Diagram (chỉ vẽ phần Domain)
+Vẽ **UML Class Diagram** cho các Entity trong `{Service}.Domain`:
+1. Mỗi class: **tên**, **thuộc tính chính** (kiểu dữ liệu), **method nghiệp vụ** (vd `Confirm()`, `MarkAsSent()`).
+2. **Quan hệ**: kế thừa `BaseEntity`, kết hợp 1-1 / 1-N (`ConsultationSession` 1—0..1 `AdviceNote`), phụ thuộc enum.
+3. **Enum** vẽ kèm với giá trị.
+4. Quan hệ **xuyên service** (chỉ lưu `UserId`) ghi chú *"không có FK — tra cứu qua gRPC/Event"* (đúng Warning 2).
+
+> **Công cụ gợi ý**: **Mermaid** (viết text → render ra hình, review được ngay trên GitHub) hoặc **Draw.io** (kéo thả). Cả hai đều được. Có Mermaid mẫu ở mục 9.5.
+
+### 9.2. Phân công
+
+| Người | C3 phải vẽ | C4 phải vẽ | Tổng hình |
+| :--- | :--- | :--- | :---: |
+| **Dương Đình Khôi** | • C3 **Consultation Service**<br>• C3 **DietFasting Service** *(Khôi hiểu ranh giới gRPC 7002 nên vẽ giúp)* | • C4 **Consultation** (`NutritionistProfile`, `ConsultationSession`, `AdviceNote`, enum `ConsultationStatus`) | **3** |
+| **Trần Phạm Khánh Quốc** | • C3 **Notification Service** | • C4 **Notification** (`NotificationLog`, `NotificationPreference`, 2 enum)<br>• C4 **DietFasting** (`MealLog`, `MealFoodItem`, `FastingSession`, `FmdCycle`, `FmdRule`, `MealTemplate` + 4 enum) *(Quốc đã sở hữu FMD nên nắm entity tốt)* | **3** |
+
+> Mỗi người 3 hình; Khôi nặng ở C3, Quốc nặng ở C4. Hai người **không phụ thuộc nhau**, làm song song; ai xong sớm thì hỗ trợ người kia.
+
+### 9.3. Nội dung chi tiết từng sơ đồ (đối chiếu code thật)
+
+#### A. Khôi — C3 Consultation Service (`src/Services/Consultation/`)
+| Tầng | Component cần có trong hình |
+| :--- | :--- |
+| **API** | `ConsultationsController` (4 endpoint: `/book`, `/nutritionist/{id}`, `/advice`, `/review-user/{id}`), `Program.cs` (DI + `ExceptionHandlingMiddleware`) |
+| **Application** | `IConsultationService` / `ConsultationService`, DTOs (`BookConsultationDto`, `SendAdviceDto`, `UserHealthReviewDto`…), `IConsultationSessionRepository`, `INutritionistProfileRepository`, `IAdviceNoteRepository`, `IDietFastingGrpcClientService`, `IEventBus` |
+| **Infrastructure** | `ConsultationDbContext` + Configurations, 3 Repository implement, **`DietFastingGrpcClient`**, RabbitMQ publisher (implement `IEventBus`) |
+| **Domain** | `NutritionistProfile`, `ConsultationSession`, `AdviceNote`, `ConsultationStatus`, `ConsultationExceptions` |
+| **Bên ngoài (rìa hình)** | YARP Gateway (HTTP vào) • `consultation_db` (EF Core/Npgsql) • DietFasting gRPC `:7002` (gRPC/HTTP2) • RabbitMQ (publish `AdviceSentIntegrationEvent`, `ConsultationBookedIntegrationEvent`) |
+
+Điểm nhấn thầy hay hỏi: *"`ReviewUserDietProgressAsync` đi qua những component nào để lấy dữ liệu từ service khác?"* → Controller → `ConsultationService` → `IDietFastingGrpcClientService` → `DietFastingGrpcClient` → gRPC `:7002`.
+
+#### B. Khôi — C3 DietFasting Service (`src/Services/DietFasting/`)
+| Tầng | Component cần có trong hình |
+| :--- | :--- |
+| **API** | 6 controller: `MealsController`, `FastingController`, `FmdController`, `NutritionController`, `FmdRulesController`, `MealTemplatesController` |
+| **Application** | `IMealService`, `IFastingService`, `IFmdService`, `INutritionService`, `IFmdRuleService`, `IMealTemplateService`, `IRedisCacheService` + 5 repository interface (`IMealLogRepository`, `IFastingSessionRepository`, `IFmdCycleRepository`, `IFmdRuleRepository`, `IMealTemplateRepository`) |
+| **Infrastructure** | `DietDbContext` + Configurations, 5 Repository implement, **`RedisCacheService`**, **`NutritionApiClient`** (USDA), **`DietFastingGrpcServer`** (gRPC `:7002`) |
+| **Domain** | `MealLog`, `MealFoodItem`, `FastingSession`, `FmdCycle`, `FmdRule`, `MealTemplate` + enum |
+| **Bên ngoài (rìa hình)** | YARP Gateway (HTTP) • `diet_db` • Redis `:6379` • Nutrition API (REST/HTTPS) • Consultation Service (gọi vào gRPC `:7002`) • RabbitMQ (publish `FmdCycleAlertIntegrationEvent`, `MealLogged`, `FastingStarted/Completed`) |
+
+> Hình này nhiều component nên **được phép gom nhóm** bằng khung màu (Meals/Nutrition • Fasting • FMD • Master Data).
+
+#### C. Khôi — C4 Consultation (`Consultation.Domain/Entities`)
+- `BaseEntity` (`Id`, `CreatedAt`, `UpdatedAt`) — 3 class dưới đây đều kế thừa.
+- `NutritionistProfile`: `UserId`, `FullName`, `Certification`, `Specialization`, `Bio`, `IsVerified`; method `Verify()`.
+- `ConsultationSession`: `UserId`, `NutritionistId`, `ScheduledAtUtc`, `DurationMinutes=45`, `Status`, `Notes?`; method `Schedule()` (static), `Confirm()`, `Complete()`, `Cancel(reason)`, `AttachAdvice(advice)`.
+- `AdviceNote`: `ConsultationSessionId`, `UserId`, `NutritionistId`, `AdviceSummary`, `DietaryRecommendations`, `FastingRecommendations`.
+- Quan hệ: `NutritionistProfile 1 ── * ConsultationSession`; `ConsultationSession 1 ── 0..1 AdviceNote`.
+- Enum: `ConsultationStatus { Pending=1, Confirmed=2, Completed=3, Cancelled=4 }`.
+- Ghi chú: `UserId` tham chiếu `identity_db` — **không có FK**. Nên vẽ thêm **sơ đồ trạng thái nhỏ** `Pending → Confirmed → Completed | Cancelled` (điểm cộng).
+
+#### D. Quốc — C3 Notification Service (`src/Services/Notification/`)
+| Tầng | Component cần có trong hình |
+| :--- | :--- |
+| **API** | `NotificationsController` (4 endpoint: `/send`, `/user/{id}`, `/preferences/{id}` GET + PUT) |
+| **Application** | `INotificationService` / `NotificationService`, `IEmailService`, DTOs, `INotificationLogRepository` (có `HasEventBeenProcessedAsync` → **idempotency**), `INotificationPreferenceRepository` |
+| **Infrastructure** | `NotificationDbContext` + Configurations, 2 Repository implement, **`RabbitMqNotificationConsumer`** (`BackgroundService`), **`SmtpEmailService`** |
+| **Domain** | `NotificationLog`, `NotificationPreference`, `NotificationStatus`, `NotificationChannel` |
+| **Bên ngoài (rìa hình)** | `notification_db` • RabbitMQ exchange `longevity_events_exchange` (Topic) → queue `notification_events_queue`, binding `notification.#`, `advice.#`, `fmd.#` • Mailpit SMTP `:1025` (UI `:8025`) • Publisher: DietFasting, Consultation, Job Service |
+
+Điểm nhấn: vẽ **2 luồng vào** — (1) HTTP từ Controller; (2) **bất đồng bộ** từ RabbitMQ qua Consumer → `NotificationService` → `IEmailService` → SMTP. Nhấn mạnh bước *kiểm tra EventId trước khi gửi* (Warning 5).
+
+#### E. Quốc — C4 Notification (`Notification.Domain/Entities`)
+- `NotificationLog`: `UserId`, `Recipient`, `Subject`, `Body`, `Channel`, `Status`, `SentAtUtc?`, `ErrorMessage?`, **`EventId?`** (idempotency); method `MarkAsSent()`, `MarkAsFailed(error)`.
+- `NotificationPreference`: `UserId`, `EmailNotificationsEnabled`, `FastingRemindersEnabled`, `NutritionistAdviceAlertsEnabled`; method `UpdatePreferences(email, fasting, advice)`.
+- Enum: `NotificationStatus {Pending, Sent, Failed}`, `NotificationChannel {Email, InApp, Push}`.
+- Cả hai kế thừa `BaseEntity`; giữa 2 class **không có quan hệ**, chỉ chung `UserId` → ghi chú rõ. Vẽ thêm trạng thái `Pending → Sent | Failed`.
+
+#### F. Quốc — C4 DietFasting (`DietFasting.Domain/Entities`)
+| Class | Thuộc tính / method bắt buộc có trong hình |
+| :--- | :--- |
+| `MealLog` | `UserId`, `MealType`, `LoggedAt`, `TotalCalories/Protein/Carbs/Fat/FiberGrams`, `IsHaraHachiBuCompliant`, `SatietyPercentage`, `ExceededThreshold`, `ThresholdViolationNotes`, `FoodItems`; `AddFoodItem()`, `RecalculateTotals()`, `MarkThresholdExceeded(reason)` |
+| `MealFoodItem` | `MealLogId`, `ExternalFoodId`, `FoodName`, `ServingSize/Unit`, `Calories`, `ProteinGrams`, `CarbsGrams`, `FatGrams`, `FiberGrams` — **`MealLog 1 ── * MealFoodItem`** |
+| `FastingSession` | `UserId`, `FastingType`, `StartTimeUtc`, `TargetEndTimeUtc`, `ActualEndTimeUtc?`, `Status`, `MoodNotes`, `TargetHours`; `Create()` (static), `Complete()`, `Cancel()` |
+| `FmdCycle` | `UserId`, `CycleNumber`, `StartDate`, `EndDate`, `CurrentDay`, `Status`, `TargetCaloriesDay1=1100`, `TargetCaloriesDays2To5=725`; `Create()`, `AdvanceDay()`, `CheckThreshold(calories)`, `Complete()`, `Cancel()` |
+| `FmdRule` | `DayNumber (1–5)`, `MaxCalories`, `TargetProtein/Fat/CarbPercent`, `Description`; `UpdateRule()` |
+| `MealTemplate` | `Name`, `Description`, `AssociatedFastingType`, `FmdDayNumber?`, tổng macro, `IsPlantSlantCompliant`, `IsHaraHachiBuOptimized`, `IsAdminTemplate`, `RecipeContentJson` |
+| Enum | `MealType {Breakfast, Lunch, Dinner, Snack}` • `FastingType {Circadian, 16:8, 18:6, 20:4, Extended, FmdProtocol}` • `FastingStatus {InProgress, Completed, Cancelled}` • `FmdStatus {Planned, Active, Completed, Cancelled}` |
+
+Điểm nhấn: `FmdCycle.CheckThreshold()` ↔ `MealLog.MarkThresholdExceeded()` là **cặp nghiệp vụ cảnh báo vượt calo** (Invariant 4.1). Nếu hình quá dài, **được tách 2 hình**: (1) Meals + Templates, (2) Fasting + FMD.
+
+### 9.4. Quy trình làm việc & bàn giao
+
+1. **Tạo nhánh từ `dev`** (như mục 7): Quốc → `quoc`, Khôi → `khoi`.
+   ```bash
+   git checkout dev && git pull origin dev
+   git checkout -b quoc    # hoặc khoi
+   ```
+2. **Đọc code thật** theo đường dẫn ở mục 9.3 (đừng vẽ theo trí nhớ — thầy sẽ đối chiếu với source).
+3. **Vẽ nháp bằng Mermaid** (mẫu ở 9.5), xem thử bằng `mermaid.live` hoặc preview của GitHub/VS Code.
+4. **Lưu file** vào `Longevity_Diet_Tracker_System/docs/diagrams/` (tạo mới; mỗi người chỉ thêm file của mình → không conflict):
+
+   | File | Người |
+   | :--- | :--- |
+   | `C3_Consultation` | Khôi |
+   | `C3_DietFasting` | Khôi |
+   | `C4_Consultation` | Khôi |
+   | `C3_Notification` | Quốc |
+   | `C4_Notification` | Quốc |
+   | `C4_DietFasting` | Quốc |
+
+   Mỗi sơ đồ nộp **2 file**: `.mmd` (mã nguồn để sửa) và `.png` (xuất ≥ 1600px để dán slide). Nếu dùng Draw.io thì nộp `.drawio` + `.png`.
+5. **Checklist tự kiểm tra trước khi tạo PR:**
+   - [ ] Tên component/class **khớp 100%** với code trong repo.
+   - [ ] C3: mũi tên phụ thuộc đi từ ngoài vào trong, **không có** mũi tên Domain → Infrastructure.
+   - [ ] C3: có đủ thế giới bên ngoài (DB, broker, gRPC, SMTP, Redis) kèm **nhãn giao thức**.
+   - [ ] C4: mỗi class có thuộc tính + method nghiệp vụ, có quan hệ & enum.
+   - [ ] C4: quan hệ xuyên service ghi chú *không có FK*.
+   - [ ] Có chú giải (legend) và tiêu đề hình dạng `[C3] Component Diagram – <Tên Service>`.
+   - [ ] Chữ đọc được khi chiếu slide.
+6. **Tạo PR** lên GitHub nhờ Khoa review rồi merge vào `dev`.
+
+### 9.5. Mẫu Mermaid để copy và sửa
+
+**C3 (flowchart theo 4 tầng) — ví dụ rút gọn cho Consultation:**
+
+```mermaid
+flowchart LR
+    GW["YARP Gateway<br/>HTTP"] --> CTRL
+
+    subgraph API["Consultation.API"]
+        CTRL["ConsultationsController<br/>[Controller]"]
+    end
+    subgraph APP["Consultation.Application"]
+        SVC["ConsultationService<br/>[Application Service]"]
+        IGRPC["IDietFastingGrpcClientService<br/>[Interface]"]
+        IREPO["I...Repository x3<br/>[Interface]"]
+        IBUS["IEventBus<br/>[Interface]"]
+    end
+    subgraph INFRA["Consultation.Infrastructure"]
+        GRPC["DietFastingGrpcClient<br/>[gRPC Client]"]
+        REPO["Repositories x3<br/>[EF Core]"]
+        CTX["ConsultationDbContext"]
+        PUB["RabbitMQ Publisher"]
+    end
+    subgraph DOM["Consultation.Domain"]
+        ENT["NutritionistProfile<br/>ConsultationSession<br/>AdviceNote"]
+    end
+
+    CTRL --> SVC
+    SVC --> IGRPC
+    SVC --> IREPO
+    SVC --> IBUS
+    GRPC -. implements .-> IGRPC
+    REPO -. implements .-> IREPO
+    PUB -. implements .-> IBUS
+    REPO --> CTX
+    SVC --> ENT
+    CTX --> ENT
+
+    GRPC -- "gRPC / HTTP2 :7002" --> DIET[("DietFasting Service")]
+    CTX -- "EF Core / Npgsql" --> DB[("consultation_db")]
+    PUB -- "AMQP" --> MQ{{"RabbitMQ"}}
+```
+
+**C4 (class diagram) — ví dụ cho Consultation:**
+
+```mermaid
+classDiagram
+    class BaseEntity {
+        +Guid Id
+        +DateTime CreatedAt
+        +DateTime? UpdatedAt
+    }
+    class NutritionistProfile {
+        +Guid UserId
+        +string FullName
+        +string Certification
+        +string Specialization
+        +string Bio
+        +bool IsVerified
+        +Verify() void
+    }
+    class ConsultationSession {
+        +Guid UserId
+        +Guid NutritionistId
+        +DateTime ScheduledAtUtc
+        +int DurationMinutes
+        +ConsultationStatus Status
+        +string? Notes
+        +Schedule()$ ConsultationSession
+        +Confirm() void
+        +Complete() void
+        +Cancel(reason) void
+        +AttachAdvice(advice) void
+    }
+    class AdviceNote {
+        +Guid ConsultationSessionId
+        +string AdviceSummary
+        +string DietaryRecommendations
+        +string FastingRecommendations
+    }
+    class ConsultationStatus {
+        <<enumeration>>
+        Pending
+        Confirmed
+        Completed
+        Cancelled
+    }
+    BaseEntity <|-- NutritionistProfile
+    BaseEntity <|-- ConsultationSession
+    BaseEntity <|-- AdviceNote
+    NutritionistProfile "1" --> "*" ConsultationSession : has
+    ConsultationSession "1" --> "0..1" AdviceNote : results in
+    ConsultationSession --> ConsultationStatus
+    note for ConsultationSession "UserId tham chiếu identity_db - KHÔNG có Foreign Key"
+```
+
+### 9.6. Cách trả lời khi thầy hỏi vấn đáp
+- **C3**: "Em chia service thành 4 tầng Onion. Request đi Controller → Application Service → Repository/Client ở Infrastructure → Entity ở Domain. Infrastructure implement interface của Application nên Domain không phụ thuộc gì bên ngoài."
+- **C4**: "Entity áp dụng Rich Domain Model — logic chuyển trạng thái nằm trong method của chính Entity (vd `ConsultationSession.Confirm()`), không đặt ở Controller."
+- Chuẩn bị trả lời được: *"Tại sao class này không có FK sang service khác?"* và *"Luồng gọi gRPC / RabbitMQ đi qua component nào trong hình C3?"*
+
+### 9.7. Tasklist C3/C4 (đánh dấu khi xong)
+
+**Dương Đình Khôi**
+- [ ] C3 Consultation Service
+- [ ] C3 DietFasting Service
+- [ ] C4 Consultation
+- [ ] Tạo PR nhánh `khoi` → `dev`
+
+**Trần Phạm Khánh Quốc**
+- [ ] C3 Notification Service
+- [ ] C4 Notification
+- [ ] C4 DietFasting
+- [ ] Tạo PR nhánh `quoc` → `dev`
+
+> **Đồng bộ `TASK_LIST.md`**: task 1.5 (C3) và 2.5 do Khôi, task 1.5 (C4) và 3.4 do Quốc; Vy không còn nhận phần vẽ sơ đồ.
