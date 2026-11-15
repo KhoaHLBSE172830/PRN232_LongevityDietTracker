@@ -21,6 +21,7 @@ public interface IFmdService
 {
     Task<FmdCycleResponseDto> StartCycleAsync(StartFmdCycleDto dto);
     Task<FmdCycleResponseDto?> GetActiveCycleAsync(Guid userId);
+    Task<int> AdvanceActiveCyclesAsync(CancellationToken cancellationToken = default);
 }
 
 public interface INutritionService

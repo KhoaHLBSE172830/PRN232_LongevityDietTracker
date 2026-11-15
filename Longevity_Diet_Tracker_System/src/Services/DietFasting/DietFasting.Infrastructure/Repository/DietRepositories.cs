@@ -243,6 +243,11 @@ public class FmdCycleRepository : GenericRepository<FmdCycle>, IFmdCycleReposito
     {
         return await _dbSet.CountAsync(c => c.UserId == userId);
     }
+
+    public async Task<List<FmdCycle>> GetAllActiveCyclesAsync()
+    {
+        return await _dbSet.Where(c => c.Status == FmdStatus.Active).ToListAsync();
+    }
 }
 
 public class FmdRuleRepository : GenericRepository<FmdRule>, IFmdRuleRepository

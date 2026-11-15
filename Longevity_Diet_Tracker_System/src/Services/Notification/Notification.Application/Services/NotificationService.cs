@@ -4,7 +4,6 @@ using Notification.Application.DTOs;
 using Notification.Application.Repositories;
 using Notification.Domain.Entities;
 using Notification.Domain.Enums;
-using Notification.Domain.Exceptions;
 
 namespace Notification.Application.Services;
 
@@ -39,11 +38,15 @@ public class NotificationService : INotificationService
             if (alreadyProcessed)
             {
                 _logger.LogInformation("Event '{EventId}' has already been processed. Skipping to guarantee Idempotency.", request.EventId);
-                var existingLogs = await _logRepository.GetLogsByUserIdAsync(request.UserId, 1, cancellationToken);
+                var existingLogs = await _logRepository.GetLogsByUserIdAsync(request.UserId, 50, cancellationToken);
                 var existing = existingLogs.FirstOrDefault(l => l.EventId == request.EventId);
                 if (existing != null) return MapToResponse(existing);
             }
         }
+
+        // Check user notification preferences (PLAN_ASSIGNMENT.md 10.7)
+        var preference = await _preferenceRepository.GetByUserIdAsync(request.UserId, cancellationToken);
+        var emailAllowed = preference?.EmailNotificationsEnabled ?? true;
 
         var log = new NotificationLog(
             request.UserId,
@@ -53,7 +56,7 @@ public class NotificationService : INotificationService
             request.Channel,
             request.EventId);
 
-        if (request.Channel == NotificationChannel.Email)
+        if (request.Channel == NotificationChannel.Email && emailAllowed)
         {
             try
             {
@@ -65,6 +68,11 @@ public class NotificationService : INotificationService
                 _logger.LogError(ex, "Failed to send email to {Recipient}", request.Recipient);
                 log.MarkAsFailed(ex.Message);
             }
+        }
+        else
+        {
+            // InApp / Push or Email disabled by user preference: record notification in history as Sent
+            log.MarkAsSent();
         }
 
         await _logRepository.CreateAsync(log);

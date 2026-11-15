@@ -3,12 +3,20 @@ using BuildingBlocks.Common.Filters;
 using BuildingBlocks.Common.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Notification.Application;
 using Notification.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Standard port 5004 (AGENT.md 1.2, README.md, YarpGateway appsettings.json)
+var httpPort = builder.Configuration.GetValue("Ports:Http", 5004);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(httpPort, listen => listen.Protocols = HttpProtocols.Http1);
+});
 
 // Add Controllers with Global ValidationFilter like Mimo
 builder.Services.AddControllers(options =>

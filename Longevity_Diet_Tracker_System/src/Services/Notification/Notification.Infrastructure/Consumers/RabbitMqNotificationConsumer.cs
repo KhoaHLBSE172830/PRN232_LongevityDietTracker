@@ -23,6 +23,7 @@ public class RabbitMqNotificationConsumer : BackgroundService
 
     private const string ExchangeName = "longevity_events_exchange";
     private const string QueueName = "notification_events_queue";
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
 
     public RabbitMqNotificationConsumer(
         IConfiguration configuration,
@@ -34,125 +35,189 @@ public class RabbitMqNotificationConsumer : BackgroundService
         _logger = logger;
     }
 
-    public override Task StartAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var host = _configuration["RabbitMQ:Host"] ?? "localhost";
-            var port = int.Parse(_configuration["RabbitMQ:Port"] ?? "5672");
-            var username = _configuration["RabbitMQ:Username"] ?? "guest";
-            var password = _configuration["RabbitMQ:Password"] ?? "guest";
-
-            var factory = new ConnectionFactory
-            {
-                HostName = host,
-                Port = port,
-                UserName = username,
-                Password = password,
-                DispatchConsumersAsync = true
-            };
-
-            _connection = factory.CreateConnection();
-            _channel = _connection.CreateModel();
-
-            _channel.ExchangeDeclare(exchange: ExchangeName, type: ExchangeType.Topic, durable: true);
-            _channel.QueueDeclare(queue: QueueName, durable: true, exclusive: false, autoDelete: false);
-            _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "notification.#");
-            _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "advice.#");
-            _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "fmd.#");
-
-            _logger.LogInformation("RabbitMQ Notification Consumer initialized and bound to queue: {Queue}", QueueName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning("RabbitMQ connection could not be established at startup: {Message}. Background consumer will retry or run offline.", ex.Message);
-        }
-
-        return base.StartAsync(cancellationToken);
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (_channel == null)
-        {
-            _logger.LogWarning("RabbitMQ channel is not open. Consumer will remain idle.");
-            return;
-        }
+        var host = _configuration["RabbitMQ:Host"] ?? "localhost";
+        var port = int.TryParse(_configuration["RabbitMQ:Port"], out var parsedPort) ? parsedPort : 5672;
+        var username = _configuration["RabbitMQ:Username"] ?? "guest";
+        var password = _configuration["RabbitMQ:Password"] ?? "guest";
 
-        var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.Received += async (sender, ea) =>
+        var factory = new ConnectionFactory
         {
-            var body = ea.Body.ToArray();
-            var message = Encoding.UTF8.GetString(body);
-            var routingKey = ea.RoutingKey;
+            HostName = host,
+            Port = port,
+            UserName = username,
+            Password = password,
+            DispatchConsumersAsync = true,
+            RequestedConnectionTimeout = TimeSpan.FromSeconds(3)
+        };
 
+        var warned = false;
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                _connection = factory.CreateConnection("notification-events-consumer");
+                _channel = _connection.CreateModel();
 
-                if (routingKey.StartsWith("notification.email"))
-                {
-                    var emailEvent = JsonSerializer.Deserialize<SendEmailNotificationIntegrationEvent>(message);
-                    if (emailEvent != null)
-                    {
-                        await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
-                            emailEvent.UserId,
-                            emailEvent.RecipientEmail,
-                            emailEvent.Subject,
-                            emailEvent.BodyHtml,
-                            NotificationChannel.Email,
-                            EventId: emailEvent.Id.ToString()), stoppingToken);
-                    }
-                }
-                else if (routingKey.StartsWith("fmd.alert"))
-                {
-                    var fmdEvent = JsonSerializer.Deserialize<FmdCycleAlertIntegrationEvent>(message);
-                    if (fmdEvent != null)
-                    {
-                        await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
-                            fmdEvent.UserId,
-                            "user@example.com",
-                            $"FMD Cycle Day {fmdEvent.DayNumber} Alert",
-                            fmdEvent.Message,
-                            NotificationChannel.InApp,
-                            EventId: fmdEvent.Id.ToString()), stoppingToken);
-                    }
-                }
-                else if (routingKey.StartsWith("advice.sent"))
-                {
-                    var adviceEvent = JsonSerializer.Deserialize<AdviceSentIntegrationEvent>(message);
-                    if (adviceEvent != null)
-                    {
-                        await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
-                            adviceEvent.UserId,
-                            "user@example.com",
-                            "New Nutritionist Consultation Advice Received",
-                            adviceEvent.AdviceSummary,
-                            NotificationChannel.InApp,
-                            EventId: adviceEvent.Id.ToString()), stoppingToken);
-                    }
-                }
+                _channel.ExchangeDeclare(exchange: ExchangeName, type: ExchangeType.Topic, durable: true);
+                _channel.QueueDeclare(queue: QueueName, durable: true, exclusive: false, autoDelete: false);
+                _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "notification.#");
+                _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "advice.#");
+                _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "fmd.#");
+                _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "consultation.#");
+                _channel.BasicQos(0, 1, false);
 
-                _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+                var consumer = new AsyncEventingBasicConsumer(_channel);
+                consumer.Received += async (_, ea) => await HandleMessageAsync(_channel, ea, stoppingToken);
+
+                _channel.BasicConsume(queue: QueueName, autoAck: false, consumer: consumer);
+
+                _logger.LogInformation("RabbitMQ Notification Consumer listening on queue: {Queue}", QueueName);
+                warned = false;
+
+                while (_connection.IsOpen && !stoppingToken.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing RabbitMQ notification message.");
-                _channel.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+                if (!warned)
+                {
+                    _logger.LogWarning("RabbitMQ connection not ready ({Message}). Retrying every {Seconds}s...", ex.Message, RetryDelay.TotalSeconds);
+                    warned = true;
+                }
             }
-        };
+            finally
+            {
+                try { _channel?.Close(); } catch { /* ignore */ }
+                try { _connection?.Close(); } catch { /* ignore */ }
+            }
 
-        _channel.BasicConsume(queue: QueueName, autoAck: false, consumer: consumer);
+            try
+            {
+                await Task.Delay(RetryDelay, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
 
-        await Task.CompletedTask;
+    private async Task HandleMessageAsync(IModel channel, BasicDeliverEventArgs ea, CancellationToken stoppingToken)
+    {
+        var body = ea.Body.ToArray();
+        var message = Encoding.UTF8.GetString(body);
+        var routingKey = ea.RoutingKey;
+
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+            if (routingKey.StartsWith("notification.email"))
+            {
+                var emailEvent = JsonSerializer.Deserialize<SendEmailNotificationIntegrationEvent>(message);
+                if (emailEvent != null)
+                {
+                    await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
+                        emailEvent.UserId,
+                        emailEvent.RecipientEmail,
+                        emailEvent.Subject,
+                        emailEvent.BodyHtml,
+                        NotificationChannel.Email,
+                        EventId: emailEvent.Id.ToString()), stoppingToken);
+                }
+            }
+            else if (routingKey.StartsWith("fmd.alert"))
+            {
+                var fmdEvent = JsonSerializer.Deserialize<FmdCycleAlertIntegrationEvent>(message);
+                if (fmdEvent != null)
+                {
+                    var htmlBody = $"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; border: 2px solid #dc2626; border-radius: 12px; padding: 20px; background-color: #fef2f2;">
+                            <h2 style="color: #b91c1c; margin-top: 0;">⚠️ Cảnh Báo Vượt Định Mức Calo Chu Kỳ FMD (Ngày {fmdEvent.DayNumber})</h2>
+                            <p style="color: #1f2937; font-size: 15px; line-height: 1.5;">{fmdEvent.Message}</p>
+                            <hr style="border: none; border-top: 1px solid #fecaca; margin: 16px 0;" />
+                            <p style="color: #7f1d1d; font-size: 13px; margin-bottom: 0;">
+                                🌿 <strong>Giao thức FMD (Dr. Valter Longo):</strong> Để duy trì trạng thái tự thực bào (Autophagy), vui lòng giữ mức năng lượng Ngày 1 ≤ 1100 kcal và Ngày 2–5 ≤ 725 kcal.
+                            </p>
+                        </div>
+                        """;
+
+                    await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
+                        fmdEvent.UserId,
+                        "user@example.com",
+                        $"FMD Cycle Day {fmdEvent.DayNumber} Alert - Calorie Limit Exceeded",
+                        htmlBody,
+                        NotificationChannel.Email,
+                        EventId: fmdEvent.Id.ToString()), stoppingToken);
+                }
+            }
+            else if (routingKey.StartsWith("advice.sent"))
+            {
+                var adviceEvent = JsonSerializer.Deserialize<AdviceSentIntegrationEvent>(message);
+                if (adviceEvent != null)
+                {
+                    var htmlBody = $"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; border: 1px solid #0d9488; border-radius: 12px; padding: 20px; background-color: #f0fdfa;">
+                            <h2 style="color: #0f766e; margin-top: 0;">🩺 Phiếu Lời Khuyên Mới Từ Chuyên Gia Dinh Dưỡng</h2>
+                            <p style="color: #1f2937; font-size: 15px; line-height: 1.5;">{adviceEvent.AdviceSummary}</p>
+                            <p style="color: #475569; font-size: 12px; margin-bottom: 0;">Mã phiên tư vấn: {adviceEvent.ConsultationSessionId}</p>
+                        </div>
+                        """;
+
+                    await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
+                        adviceEvent.UserId,
+                        "user@example.com",
+                        "New Nutritionist Consultation Advice Received",
+                        htmlBody,
+                        NotificationChannel.Email,
+                        EventId: adviceEvent.Id.ToString()), stoppingToken);
+                }
+            }
+            else if (routingKey.StartsWith("consultation.booked"))
+            {
+                var bookedEvent = JsonSerializer.Deserialize<ConsultationBookedIntegrationEvent>(message);
+                if (bookedEvent != null)
+                {
+                    var htmlBody = $"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; border: 1px solid #0284c7; border-radius: 12px; padding: 20px; background-color: #f0f9ff;">
+                            <h2 style="color: #0369a1; margin-top: 0;">📅 Xác Nhận Đặt Lịch Tư Vấn Sức Khỏe Blue Zones</h2>
+                            <p style="color: #1f2937; font-size: 15px;">Lịch hẹn của bạn đã được ghi nhận vào lúc: <strong>{bookedEvent.ScheduledAt:yyyy-MM-dd HH:mm} UTC</strong>.</p>
+                        </div>
+                        """;
+
+                    await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
+                        bookedEvent.UserId,
+                        "user@example.com",
+                        "Consultation Booking Confirmed",
+                        htmlBody,
+                        NotificationChannel.Email,
+                        EventId: bookedEvent.Id.ToString()), stoppingToken);
+                }
+            }
+
+            channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing RabbitMQ notification message on routing key {RoutingKey}.", routingKey);
+            channel.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+        }
     }
 
     public override void Dispose()
     {
-        _channel?.Close();
-        _connection?.Close();
+        try { _channel?.Close(); } catch { /* ignore */ }
+        try { _connection?.Close(); } catch { /* ignore */ }
         base.Dispose();
     }
 }
-

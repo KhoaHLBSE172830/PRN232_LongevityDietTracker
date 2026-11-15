@@ -19,6 +19,7 @@ public interface IFmdCycleRepository : IGenericRepository<FmdCycle>
 {
     Task<FmdCycle?> GetActiveCycleAsync(Guid userId);
     Task<int> GetCycleCountAsync(Guid userId);
+    Task<List<FmdCycle>> GetAllActiveCyclesAsync();
 }
 
 public interface IFmdRuleRepository : IGenericRepository<FmdRule>

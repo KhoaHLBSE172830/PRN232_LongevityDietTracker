@@ -1,0 +1,57 @@
+%% [C4] Code / Class Diagram – Notification.Domain (Rich Domain Model)
+%% Author: Trần Phạm Khánh Quốc (Branch: quoc)
+classDiagram
+    class BaseEntity {
+        <<abstract>>
+        +Guid Id
+        +DateTime? CreatedAt
+        +DateTime? UpdatedAt
+    }
+
+    class NotificationLog {
+        +Guid UserId
+        +string Recipient
+        +string Subject
+        +string Body
+        +NotificationChannel Channel
+        +NotificationStatus Status
+        +DateTime? SentAtUtc
+        +string? ErrorMessage
+        +string? EventId
+        +NotificationLog()
+        +NotificationLog(Guid userId, string recipient, string subject, string body, NotificationChannel channel, string? eventId)
+        +MarkAsSent() void
+        +MarkAsFailed(string error) void
+    }
+
+    class NotificationPreference {
+        +Guid UserId
+        +bool EmailNotificationsEnabled
+        +bool FastingRemindersEnabled
+        +bool NutritionistAdviceAlertsEnabled
+        +NotificationPreference()
+        +UpdatePreferences(bool email, bool fasting, bool advice) void
+    }
+
+    class NotificationStatus {
+        <<enumeration>>
+        Pending = 1
+        Sent = 2
+        Failed = 3
+    }
+
+    class NotificationChannel {
+        <<enumeration>>
+        Email = 1
+        InApp = 2
+        Push = 3
+    }
+
+    BaseEntity <|-- NotificationLog
+    BaseEntity <|-- NotificationPreference
+    NotificationLog --> NotificationStatus : Status (Pending -> Sent | Failed)
+    NotificationLog --> NotificationChannel : Channel
+
+    note for NotificationLog "1. EventId dùng để kiểm tra Idempotency (AGENT.md Warning 5: HasEventBeenProcessedAsync).\n2. UserId chỉ lưu giá trị Guid logic — KHÔNG có Foreign Key sang identity_db (AGENT.md Warning 2).\n3. Chu trình trạng thái: Pending --> Sent | Failed."
+    note for NotificationPreference "Giữa NotificationLog và NotificationPreference KHÔNG có quan hệ khóa ngoại, chỉ dùng chung UserId (Unique Index trên user_id)."
+

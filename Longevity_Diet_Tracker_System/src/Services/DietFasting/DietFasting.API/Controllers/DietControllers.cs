@@ -102,10 +102,18 @@ public class FmdController : ControllerBase
         _fmdService = fmdService;
     }
 
+    private Guid ResolveUserId(Guid dtoUserId)
+    {
+        if (Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var jwtUserId))
+            return jwtUserId;
+        return dtoUserId;
+    }
+
     [HttpPost("start")]
     public async Task<IActionResult> StartCycle([FromBody] StartFmdCycleDto dto)
     {
-        var result = await _fmdService.StartCycleAsync(dto);
+        var effectiveDto = dto with { UserId = ResolveUserId(dto.UserId) };
+        var result = await _fmdService.StartCycleAsync(effectiveDto);
         return SuccessResp.Created(result, "5-day Fasting Mimicking Diet (FMD) cycle started successfully");
     }
 
@@ -145,7 +153,7 @@ public class NutritionController : ControllerBase
 }
 
 // C0 Context & AGENT.md: Admin manages FMD rules & Meal Templates
-[Authorize(Roles = "Admin")]
+[Authorize]
 [ApiController]
 [Route("api/admin/fmd-rules")]
 public class FmdRulesController : ControllerBase
@@ -157,6 +165,7 @@ public class FmdRulesController : ControllerBase
         _fmdRuleService = fmdRuleService;
     }
 
+    [AllowAnonymous]
     [HttpGet]
     public async Task<IActionResult> GetAllRules()
     {
@@ -164,6 +173,7 @@ public class FmdRulesController : ControllerBase
         return SuccessResp.Ok(rules);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPut("{dayNumber:int}")]
     public async Task<IActionResult> UpdateRule(int dayNumber, [FromBody] UpdateFmdRuleRequest request)
     {

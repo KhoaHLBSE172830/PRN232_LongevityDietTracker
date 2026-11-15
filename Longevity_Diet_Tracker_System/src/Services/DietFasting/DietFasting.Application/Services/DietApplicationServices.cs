@@ -232,8 +232,17 @@ public class FmdService : IFmdService
         if (active != null)
             throw new ActiveFmdCycleAlreadyExistsException(dto.UserId);
 
+        var startDateUtc = dto.StartDate == default
+            ? DateTime.UtcNow
+            : dto.StartDate.Kind switch
+            {
+                DateTimeKind.Utc => dto.StartDate,
+                DateTimeKind.Local => dto.StartDate.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(dto.StartDate, DateTimeKind.Utc)
+            };
+
         var count = await _fmdRepository.GetCycleCountAsync(dto.UserId);
-        var cycle = FmdCycle.Create(dto.UserId, count + 1, dto.StartDate);
+        var cycle = FmdCycle.Create(dto.UserId, count + 1, startDateUtc);
 
         await _fmdRepository.CreateAsync(cycle);
         await _unitOfWork.SaveChangesAsync();
@@ -256,6 +265,21 @@ public class FmdService : IFmdService
         return new FmdCycleResponseDto(
             cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status, targetCal);
     }
+
+    public async Task<int> AdvanceActiveCyclesAsync(CancellationToken cancellationToken = default)
+    {
+        var activeCycles = await _fmdRepository.GetAllActiveCyclesAsync();
+        if (activeCycles.Count == 0) return 0;
+
+        foreach (var cycle in activeCycles)
+        {
+            cycle.AdvanceDay();
+            await _fmdRepository.UpdateAsync(cycle);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return activeCycles.Count;
+    }
 }
 
 public class FmdRuleService : IFmdRuleService
@@ -272,6 +296,21 @@ public class FmdRuleService : IFmdRuleService
     public async Task<List<FmdRuleDto>> GetAllRulesAsync()
     {
         var rules = await _ruleRepository.GetAllRulesAsync();
+        if (rules.Count == 0)
+        {
+            var defaultRules = new List<FmdRule>
+            {
+                new(1, 1100, 11, 46, 43, "Ngày 1 (Khởi động): Chuyển đổi năng lượng tế bào (1100 kcal)"),
+                new(2, 725, 9, 44, 47, "Ngày 2: Đốt mỡ sâu & Kích hoạt tự thực bào Autophagy (725 kcal)"),
+                new(3, 725, 9, 44, 47, "Ngày 3: Thanh lọc tế bào lão hóa & Giảm chỉ số viêm (725 kcal)"),
+                new(4, 725, 9, 44, 47, "Ngày 4: Tái tạo hệ miễn dịch & Trẻ hóa sinh học (725 kcal)"),
+                new(5, 725, 9, 44, 47, "Ngày 5: Hoàn tất chu kỳ & Phục hồi tế bào gốc (725 kcal)")
+            };
+            await _ruleRepository.CreateRangeAsync(defaultRules);
+            await _unitOfWork.SaveChangesAsync();
+            rules = defaultRules;
+        }
+
         return rules.Select(r => new FmdRuleDto(
             r.Id, r.DayNumber, r.MaxCalories, r.TargetProteinPercent, r.TargetFatPercent, r.TargetCarbPercent, r.Description)).ToList();
     }

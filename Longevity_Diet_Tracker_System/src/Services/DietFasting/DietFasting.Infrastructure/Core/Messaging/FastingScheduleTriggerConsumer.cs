@@ -112,9 +112,17 @@ public sealed class FastingScheduleTriggerConsumer : BackgroundService
                 _logger.LogInformation("Trigger {EventId} ({JobName}): {Count} fasting reminder(s) published, {Deferred} deferred to the next trigger",
                     trigger.Id, trigger.JobName, result.Sent, result.Deferred);
             }
+            else if (trigger.JobName == "FmdCycleDailyJob")
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var fmdService = scope.ServiceProvider.GetRequiredService<IFmdService>();
+                var advancedCount = await fmdService.AdvanceActiveCyclesAsync(cancellationToken);
+                _logger.LogInformation("Trigger {EventId} ({JobName}): {Count} active FMD cycle(s) advanced to next day",
+                    trigger.Id, trigger.JobName, advancedCount);
+            }
             else
             {
-                // FMD daily check / weekly summary belong to other modules: no handler registered yet.
+                // Weekly summary belongs to other modules: no handler registered yet.
                 _logger.LogInformation("Trigger {EventId} ({JobName}) received but no handler is registered for it", trigger.Id, trigger.JobName);
             }
 
