@@ -19,5 +19,6 @@ public interface INutritionistProfileRepository : IGenericRepository<Nutritionis
 public interface IAdviceNoteRepository : IGenericRepository<AdviceNote>
 {
     Task<List<AdviceNote>> GetByUserIdAsync(Guid userId);
+    Task<AdviceNote?> GetBySessionIdAsync(Guid sessionId);
 }
 

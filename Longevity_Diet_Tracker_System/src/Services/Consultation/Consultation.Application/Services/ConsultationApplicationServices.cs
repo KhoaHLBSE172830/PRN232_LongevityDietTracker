@@ -12,12 +12,13 @@ namespace Consultation.Application.Services;
 public interface IConsultationService
 {
     Task<List<NutritionistProfileDto>> GetNutritionistsAsync();
+    Task<NutritionistProfileDto> GetNutritionistByIdAsync(Guid id);
     Task<ConsultationSessionDto> BookSessionAsync(BookConsultationDto dto);
     Task<List<ConsultationSessionDto>> GetUserSessionsAsync(Guid userId);
     Task<List<ConsultationSessionDto>> GetNutritionistSessionsAsync(Guid nutritionistId);
-    Task<AdviceNoteDto> SendAdviceAsync(SendAdviceDto dto);
+    Task<AdviceNoteDto> SendAdviceAsync(SendAdviceDto dto, Guid? callerNutritionistId = null);
     Task<List<AdviceNoteDto>> GetUserAdvicesAsync(Guid userId);
-    Task<UserHealthReviewDto> ReviewUserDietProgressAsync(Guid userId);
+    Task<UserHealthReviewDto> ReviewUserDietProgressAsync(Guid doctorUserId, Guid userId);
 }
 
 public class ConsultationService : IConsultationService
@@ -52,12 +53,26 @@ public class ConsultationService : IConsultationService
             p.Id, p.UserId, p.FullName, p.Certification, p.Specialization, p.Bio, p.IsVerified)).ToList();
     }
 
+    public async Task<NutritionistProfileDto> GetNutritionistByIdAsync(Guid id)
+    {
+        var profile = await _nutritionistRepository.FindByIdAsync(id);
+        if (profile == null)
+            throw new NutritionistNotFoundException(id);
+
+        return new NutritionistProfileDto(
+            profile.Id, profile.UserId, profile.FullName, profile.Certification, profile.Specialization, profile.Bio, profile.IsVerified);
+    }
+
     public async Task<ConsultationSessionDto> BookSessionAsync(BookConsultationDto dto)
     {
         var nutritionist = await _nutritionistRepository.FindByIdAsync(dto.NutritionistId);
         if (nutritionist == null)
             throw new NutritionistNotFoundException(dto.NutritionistId);
 
+        if (!nutritionist.IsVerified)
+            throw new ConsultationBadRequestException("Chuyên gia dinh dưỡng này chưa được xác minh hoặc không sẵn sàng nhận lịch tư vấn.");
+
+        // ConsultationSession.Schedule enforces ScheduledAtUtc in future & UTC format
         var session = ConsultationSession.Schedule(dto.UserId, dto.NutritionistId, dto.ScheduledAtUtc, 45, dto.Notes);
 
         await _sessionRepository.CreateAsync(session);
@@ -88,16 +103,49 @@ public class ConsultationService : IConsultationService
             s.Id, s.UserId, s.NutritionistId, s.ScheduledAtUtc, s.DurationMinutes, s.Status, s.Notes, s.Nutritionist?.FullName)).ToList();
     }
 
-    public async Task<AdviceNoteDto> SendAdviceAsync(SendAdviceDto dto)
+    public async Task<AdviceNoteDto> SendAdviceAsync(SendAdviceDto dto, Guid? callerNutritionistId = null)
     {
         var session = await _sessionRepository.FindByIdAsync(dto.ConsultationSessionId);
         if (session == null)
             throw new ConsultationNotFoundException(dto.ConsultationSessionId);
 
-        var advice = new AdviceNote(
-            dto.ConsultationSessionId,
-            dto.UserId,
-            dto.NutritionistId,
+        // A6: Check if session already has advice or is completed -> 409 Conflict
+        var existingAdvice = await _adviceRepository.GetBySessionIdAsync(session.Id);
+        if (existingAdvice != null || session.Status == ConsultationStatus.Completed)
+        {
+            throw new ConsultationConflictException("Phiên tư vấn này đã có phiếu lời khuyên hoặc đã hoàn tất.");
+        }
+
+        if (session.Status == ConsultationStatus.Cancelled)
+        {
+            throw new ConsultationBadRequestException("Không thể gửi phiếu lời khuyên cho phiên tư vấn đã bị hủy.");
+        }
+
+        // A6: Validate UserId / NutritionistId if passed in payload
+        if (dto.UserId.HasValue && dto.UserId.Value != Guid.Empty && dto.UserId.Value != session.UserId)
+        {
+            throw new ConsultationBadRequestException("UserId trong yêu cầu không khớp với phiên tư vấn.");
+        }
+
+        if (dto.NutritionistId.HasValue && dto.NutritionistId.Value != Guid.Empty && dto.NutritionistId.Value != session.NutritionistId)
+        {
+            throw new ConsultationForbiddenException("Bác sĩ không có quyền kê đơn cho phiên tư vấn của bác sĩ khác.");
+        }
+
+        if (callerNutritionistId.HasValue && callerNutritionistId.Value != Guid.Empty)
+        {
+            var callerProfile = await _nutritionistRepository.GetByUserIdAsync(callerNutritionistId.Value);
+            if (callerProfile != null && callerProfile.Id != session.NutritionistId)
+            {
+                throw new ConsultationForbiddenException("Bạn không có quyền kê đơn cho phiên tư vấn của bác sĩ khác.");
+            }
+        }
+
+        // A5: ALWAYS assign the real UserId and NutritionistId from the session itself!
+        var advice = AdviceNote.Create(
+            session.Id,
+            session.UserId,
+            session.NutritionistId,
             dto.AdviceSummary,
             dto.DietaryRecommendations,
             dto.FastingRecommendations);
@@ -114,9 +162,12 @@ public class ConsultationService : IConsultationService
                 advice.Id, advice.ConsultationSessionId, advice.UserId, advice.NutritionistId, advice.AdviceSummary));
         }
 
+        var nutritionist = await _nutritionistRepository.FindByIdAsync(session.NutritionistId);
+
         return new AdviceNoteDto(
             advice.Id, advice.ConsultationSessionId, advice.UserId, advice.NutritionistId,
-            advice.AdviceSummary, advice.DietaryRecommendations, advice.FastingRecommendations, advice.CreatedAt ?? DateTime.UtcNow);
+            advice.AdviceSummary, advice.DietaryRecommendations, advice.FastingRecommendations, advice.CreatedAt ?? DateTime.UtcNow,
+            nutritionist?.FullName);
     }
 
     public async Task<List<AdviceNoteDto>> GetUserAdvicesAsync(Guid userId)
@@ -124,11 +175,24 @@ public class ConsultationService : IConsultationService
         var advices = await _adviceRepository.GetByUserIdAsync(userId);
         return advices.Select(a => new AdviceNoteDto(
             a.Id, a.ConsultationSessionId, a.UserId, a.NutritionistId,
-            a.AdviceSummary, a.DietaryRecommendations, a.FastingRecommendations, a.CreatedAt ?? DateTime.UtcNow)).ToList();
+            a.AdviceSummary, a.DietaryRecommendations, a.FastingRecommendations, a.CreatedAt ?? DateTime.UtcNow,
+            a.ConsultationSession?.Nutritionist?.FullName)).ToList();
     }
 
-    public async Task<UserHealthReviewDto> ReviewUserDietProgressAsync(Guid userId)
+    public async Task<UserHealthReviewDto> ReviewUserDietProgressAsync(Guid doctorUserId, Guid userId)
     {
+        // A4: Validate that an active/valid consultation session exists for this user!
+        var userSessions = await _sessionRepository.GetByUserIdAsync(userId);
+        var hasValidSession = userSessions.Any(s => 
+            s.Status == ConsultationStatus.Pending || 
+            s.Status == ConsultationStatus.Confirmed || 
+            s.Status == ConsultationStatus.Completed);
+
+        if (!hasValidSession)
+        {
+            throw new ConsultationForbiddenException("Chuyên gia chỉ được phép xem dữ liệu sức khỏe của hội viên khi có lịch tư vấn đã được đặt.");
+        }
+
         var fastingTask = _dietFastingGrpcClient.GetUserFastingSummaryAsync(userId);
         var nutritionTask = _dietFastingGrpcClient.GetUserNutritionSummaryAsync(userId, DateTime.UtcNow.AddDays(-30), DateTime.UtcNow);
         var fmdTask = _dietFastingGrpcClient.GetActiveFmdCycleAsync(userId);
@@ -142,5 +206,3 @@ public class ConsultationService : IConsultationService
             await fmdTask);
     }
 }
-
-

@@ -22,7 +22,7 @@ public static class DependencyInjection
 
         services.AddDbContext<ConsultationDbContext>(options =>
         {
-            options.UseNpgsql(connectionString);
+            options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
         });
 
         // Repositories & Unit of Work

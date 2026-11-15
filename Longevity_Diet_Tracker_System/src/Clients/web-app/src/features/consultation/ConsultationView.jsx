@@ -4,13 +4,15 @@ import {
   Activity, Send, Clock, ShieldCheck, HeartPulse, User, 
   Award, ArrowRight, X, Sparkles, MessageSquareHeart, AlertCircle
 } from 'lucide-react';
-import { consultationApi } from './consultationApi';
+import { consultationApi, getConsultationAuthSession } from './consultationApi';
 import { DEMO_USER } from '../../shared/services/apiClient';
 
 export default function ConsultationView() {
   const [activeTab, setActiveTab] = useState('member'); // 'member' | 'nutritionist'
   const [nutritionists, setNutritionists] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [doctorSessions, setDoctorSessions] = useState([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState('11111111-1111-1111-1111-111111111111');
   const [advices, setAdvices] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -24,6 +26,7 @@ export default function ConsultationView() {
   // gRPC Review Modal State
   const [isGrpcModalOpen, setIsGrpcModalOpen] = useState(false);
   const [grpcReviewData, setGrpcReviewData] = useState(null);
+  const [grpcError, setGrpcError] = useState(null);
   const [loadingGrpc, setLoadingGrpc] = useState(false);
 
   // Advice Form State (Doctor Portal)
@@ -35,31 +38,48 @@ export default function ConsultationView() {
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState(null);
+  const [toastType, setToastType] = useState('info'); // 'info' | 'success' | 'warning' | 'error'
 
-  const showToast = (msg) => {
+  const showToast = (msg, type = 'info') => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+    setToastType(type);
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (targetDoctorId = selectedDoctorId) => {
     setLoading(true);
     try {
-      const [nutriList, userSessions, userAdvices] = await Promise.all([
+      const authSession = getConsultationAuthSession();
+      const effectiveUserId = authSession?.userId || DEMO_USER.id;
+
+      const [nutriList, userSessions, userAdvices, docSessions] = await Promise.all([
         consultationApi.getNutritionists(),
-        consultationApi.getUserSessions(DEMO_USER.id),
-        consultationApi.getUserAdvices(DEMO_USER.id)
+        consultationApi.getUserSessions(effectiveUserId),
+        consultationApi.getUserAdvices(effectiveUserId),
+        consultationApi.getNutritionistSessions(targetDoctorId)
       ]);
       setNutritionists(nutriList || []);
       setSessions(userSessions || []);
       setAdvices(userAdvices || []);
+      setDoctorSessions(docSessions || []);
     } catch (err) {
-      console.error(err);
+      console.error('[ConsultationView] loadData error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDoctorChange = async (docId) => {
+    setSelectedDoctorId(docId);
+    try {
+      const docSessions = await consultationApi.getNutritionistSessions(docId);
+      setDoctorSessions(docSessions || []);
+    } catch (err) {
+      showToast(`Không thể tải lịch của bác sĩ: ${err.message}`, 'error');
     }
   };
 
@@ -74,41 +94,42 @@ export default function ConsultationView() {
 
     const scheduledDateTime = bookingDate ? `${bookingDate}T${bookingTime}:00Z` : new Date(Date.now() + 86400000).toISOString();
     
+    const authSession = getConsultationAuthSession();
+    const effectiveUserId = authSession?.userId || DEMO_USER.id;
+
     const payload = {
-      userId: DEMO_USER.id,
+      userId: effectiveUserId,
       nutritionistId: selectedNutritionist.id,
       scheduledAtUtc: scheduledDateTime,
       notes: bookingNotes || 'Tư vấn phác đồ ăn thực vật và lịch nhịn ăn 16/8'
     };
 
-    const res = await consultationApi.bookSession(payload);
-    if (res?.isSuccess !== false) {
-      showToast(`🎉 Đã đặt lịch thành công với ${selectedNutritionist.fullName}!`);
+    try {
+      const res = await consultationApi.bookSession(payload);
+      if (res?.isMock) {
+        showToast('⚠️ Máy chủ offline: Đã lưu lịch hẹn ở chế độ mô phỏng.', 'warning');
+      } else {
+        showToast(`🎉 Đã đặt lịch thành công với ${selectedNutritionist.fullName}!`, 'success');
+      }
       setIsBookModalOpen(false);
       setBookingNotes('');
-      // Reload or append session
-      const newSession = {
-        id: res?.data?.id || 'new-' + Date.now(),
-        userId: DEMO_USER.id,
-        nutritionistId: selectedNutritionist.id,
-        nutritionistName: selectedNutritionist.fullName,
-        scheduledAtUtc: scheduledDateTime,
-        durationMinutes: 45,
-        status: 2, // Confirmed
-        notes: payload.notes
-      };
-      setSessions(prev => [newSession, ...prev]);
+      await loadData();
+    } catch (err) {
+      showToast(`❌ Lỗi đặt lịch: ${err.message}`, 'error');
     }
   };
 
-  const handleReviewGrpc = async (userId = DEMO_USER.id) => {
+  const handleReviewGrpc = async (userId) => {
+    const targetUserId = userId || DEMO_USER.id;
     setLoadingGrpc(true);
+    setGrpcError(null);
+    setGrpcReviewData(null);
     setIsGrpcModalOpen(true);
     try {
-      const data = await consultationApi.reviewUserProgress(userId);
+      const data = await consultationApi.reviewUserProgress(targetUserId);
       setGrpcReviewData(data);
     } catch (err) {
-      console.error(err);
+      setGrpcError(err.message || 'Không thể đồng bộ dữ liệu qua gRPC cổng 7002.');
     } finally {
       setLoadingGrpc(false);
     }
@@ -133,24 +154,13 @@ export default function ConsultationView() {
       fastingRecommendations: fastingRec
     };
 
-    const res = await consultationApi.sendAdvice(payload);
-    if (res?.isSuccess !== false) {
-      showToast('💌 Đã gửi phiếu lời khuyên & Bắn sự kiện RabbitMQ thành công!');
+    try {
+      const res = await consultationApi.sendAdvice(payload);
+      showToast('💌 Đã gửi phiếu lời khuyên & Bắn sự kiện RabbitMQ thành công!', 'success');
       setIsAdviceModalOpen(false);
-      
-      // Update local session status to Completed (3)
-      setSessions(prev => prev.map(s => s.id === selectedSessionForAdvice.id ? { ...s, status: 3 } : s));
-
-      // Append new advice to local state
-      const newAdvice = {
-        id: 'adv-' + Date.now(),
-        consultationSessionId: selectedSessionForAdvice.id,
-        adviceSummary,
-        dietaryRecommendations: dietaryRec,
-        fastingRecommendations: fastingRec,
-        createdAt: new Date().toISOString()
-      };
-      setAdvices(prev => [newAdvice, ...prev]);
+      await loadData();
+    } catch (err) {
+      showToast(`❌ Lỗi gửi phiếu lời khuyên: ${err.message}`, 'error');
     }
   };
 
@@ -173,8 +183,20 @@ export default function ConsultationView() {
     <div className="space-y-6 max-w-7xl mx-auto pb-16 animate-fade-in text-slate-800">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 border border-slate-700 animate-slide-up">
-          <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+        <div className={`fixed bottom-6 right-6 z-50 text-white text-xs px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 border animate-slide-up ${
+          toastType === 'error'
+            ? 'bg-rose-900 border-rose-700'
+            : toastType === 'warning'
+            ? 'bg-amber-900 border-amber-700'
+            : 'bg-slate-900 border-slate-700'
+        }`}>
+          {toastType === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          ) : toastType === 'warning' ? (
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          ) : (
+            <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+          )}
           <span>{toastMessage}</span>
         </div>
       )}
@@ -261,9 +283,9 @@ export default function ConsultationView() {
                           {nutri.fullName?.charAt(0) || 'B'}
                         </div>
                         {nutri.isVerified && (
-                          <span className="flex items-center gap-1 text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            Đã Xác Minh
+                          <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            Đã Xác Thực
                           </span>
                         )}
                       </div>
@@ -272,29 +294,28 @@ export default function ConsultationView() {
                         <h3 className="font-extrabold text-slate-900 text-sm group-hover:text-purple-700 transition-colors">
                           {nutri.fullName}
                         </h3>
-                        <p className="text-[11px] font-bold text-purple-600 mt-0.5 line-clamp-1">
-                          {nutri.specialization}
+                        <p className="text-[11px] text-purple-700 font-bold mt-0.5">
+                          {nutri.certification}
                         </p>
                       </div>
 
-                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-                        {nutri.bio}
-                      </p>
-
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] text-slate-600 flex items-center gap-2">
-                        <Award className="w-4 h-4 text-purple-500 shrink-0" />
-                        <span className="truncate">{nutri.certification}</span>
+                      <div className="text-xs text-slate-600 space-y-1">
+                        <div className="font-medium text-slate-800">
+                          <strong>Chuyên môn:</strong> {nutri.specialization}
+                        </div>
+                        <p className="line-clamp-2 text-slate-500 text-[11px] leading-relaxed">
+                          {nutri.bio}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400 font-semibold">Tư vấn 45 phút</span>
+                    <div className="pt-4 border-t border-slate-100 mt-4">
                       <button
                         onClick={() => handleOpenBookModal(nutri)}
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5"
+                        className="w-full py-2.5 px-4 rounded-xl bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
                       >
-                        <Calendar className="w-3.5 h-3.5" />
-                        <span>Đặt Lịch</span>
+                        <Calendar className="w-4 h-4" />
+                        <span>Đặt Lịch Tư Vấn</span>
                       </button>
                     </div>
                   </div>
@@ -303,16 +324,16 @@ export default function ConsultationView() {
             )}
           </div>
 
-          {/* Section: 2 Cột: Lịch hẹn của tôi & Lời khuyên nhận được */}
+          {/* Section: Lịch Hẹn Đã Đặt & Phiếu Lời Khuyên */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Cột 1: Lịch hẹn đã đặt */}
+            {/* Cột 1: Lịch Hẹn Tư Vấn Của Tôi */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-indigo-600" />
-                  <h3 className="font-extrabold text-slate-900 text-sm">Lịch Hẹn Của Bạn</h3>
+                  <Calendar className="w-5 h-5 text-purple-600" />
+                  <h3 className="font-extrabold text-slate-900 text-sm">Lịch Hẹn Của Tôi</h3>
                 </div>
-                <span className="text-xs text-slate-400 font-bold">{sessions.length} phiên</span>
+                <span className="text-xs text-slate-400 font-bold">{sessions.length} buổi</span>
               </div>
 
               {sessions.length === 0 ? (
@@ -320,32 +341,33 @@ export default function ConsultationView() {
                   Bạn chưa có lịch hẹn tư vấn nào. Hãy chọn bác sĩ ở trên để đặt lịch!
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-slate-100">
                   {sessions.map(s => (
-                    <div key={s.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3">
+                    <div key={s.id} className="py-3 flex items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-slate-900">{s.nutritionistName || 'Bác sĩ dinh dưỡng'}</span>
+                          <span className="font-bold text-xs text-slate-800">
+                            {s.nutritionistName || 'Bác sĩ Dinh dưỡng'}
+                          </span>
                           {getStatusBadge(s.status)}
                         </div>
-                        <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-slate-400" />
-                          {new Date(s.scheduledAtUtc).toLocaleString('vi-VN')}
-                        </p>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{new Date(s.scheduledAtUtc).toLocaleString('vi-VN')} ({s.durationMinutes || 45} phút)</span>
+                        </div>
                         {s.notes && (
-                          <p className="text-[11px] text-slate-600 italic">"{s.notes}"</p>
+                          <p className="text-[11px] text-slate-500 italic">
+                            "{s.notes}"
+                          </p>
                         )}
                       </div>
-                      <span className="text-xs font-extrabold text-purple-700 bg-purple-100/60 px-2.5 py-1 rounded-xl shrink-0">
-                        {s.durationMinutes || 45} phút
-                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Cột 2: Phiếu Lời Khuyên Y Khoa */}
+            {/* Cột 2: Phiếu Lời Khuyên Nhận Được (Advice Notes) */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -400,12 +422,25 @@ export default function ConsultationView() {
       {activeTab === 'nutritionist' && (
         <div className="space-y-6 animate-fade-in">
           {/* Banner Doctor Role */}
-          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                Bạn đang ở chế độ <strong>Bác Sĩ Dinh Dưỡng</strong> (Đặng Minh Tuấn). Tại đây bạn có thể <strong>gọi gRPC sang cổng 7002</strong> để soi tiến độ sức khỏe của hội viên và kê đơn gửi sự kiện qua <strong>RabbitMQ</strong>.
+                Bạn đang ở chế độ <strong>Cổng Bác Sĩ Dinh Dưỡng</strong>. Tại đây bạn có thể <strong>gọi gRPC sang cổng 7002</strong> để soi tiến độ sức khỏe của hội viên và kê đơn gửi sự kiện qua <strong>RabbitMQ</strong>.
               </span>
+            </div>
+            {/* Doctor Picker */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="font-bold text-slate-700">Bác sĩ:</span>
+              <select
+                value={selectedDoctorId}
+                onChange={(e) => handleDoctorChange(e.target.value)}
+                className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-purple-600"
+              >
+                {nutritionists.map(n => (
+                  <option key={n.id} value={n.id}>{n.fullName}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -414,52 +449,65 @@ export default function ConsultationView() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-purple-600" />
-                Danh Sách Hội Viên Chờ Khám & Đánh Giá
+                Danh Sách Hội Viên Chờ Khám & Đánh Giá ({doctorSessions.length})
               </h3>
               <span className="text-xs text-purple-700 font-bold bg-purple-50 px-2.5 py-0.5 rounded-lg border border-purple-200">
                 Tích hợp gRPC Client cổng :7002
               </span>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {sessions.map(s => (
-                <div key={s.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-sm text-slate-900">
-                        {DEMO_USER.fullName} ({DEMO_USER.email})
-                      </span>
-                      {getStatusBadge(s.status)}
+            {doctorSessions.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                Chưa có hội viên nào đặt lịch với chuyên gia này. Hãy sang tab "Dành Cho Hội Viên" để đặt lịch thử nghiệm!
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {doctorSessions.map(s => (
+                  <div key={s.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-sm text-slate-900">
+                          {s.userName || 'Hội viên (' + (s.userId ? s.userId.substring(0, 8) : DEMO_USER.name) + ')'}
+                        </span>
+                        {getStatusBadge(s.status)}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Thời gian hẹn: <strong>{new Date(s.scheduledAtUtc).toLocaleString('vi-VN')}</strong> • {s.durationMinutes || 45} phút
+                      </p>
+                      <p className="text-xs text-slate-600 italic">
+                        Ghi chú: "{s.notes || 'Hội viên quan tâm đến tối ưu năng lượng và chế độ ăn Okinawa'}"
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-500">
-                      Thời gian hẹn: <strong>{new Date(s.scheduledAtUtc).toLocaleString('vi-VN')}</strong> • {s.durationMinutes || 45} phút
-                    </p>
-                    <p className="text-xs text-slate-600 italic">
-                      Ghi chú ban đầu: "{s.notes || 'Hội viên quan tâm đến tối ưu năng lượng và chế độ ăn Okinawa'}"
-                    </p>
-                  </div>
 
-                  {/* Doctor Action Buttons */}
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <button
-                      onClick={() => handleReviewGrpc(s.userId)}
-                      className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 flex items-center gap-1.5 transition-all"
-                    >
-                      <Activity className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Soi Dữ Liệu Sức Khỏe (gRPC)</span>
-                    </button>
+                    {/* Doctor Action Buttons */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <button
+                        onClick={() => handleReviewGrpc(s.userId)}
+                        className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 flex items-center gap-1.5 transition-all"
+                      >
+                        <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Soi Dữ Liệu Sức Khỏe (gRPC)</span>
+                      </button>
 
-                    <button
-                      onClick={() => handleOpenAdviceModal(s)}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Kê Đơn Lời Khuyên (RabbitMQ)</span>
-                    </button>
+                      {s.status !== 3 ? (
+                        <button
+                          onClick={() => handleOpenAdviceModal(s)}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Kê Đơn Lời Khuyên (RabbitMQ)</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Đã Kê Đơn
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -489,39 +537,41 @@ export default function ConsultationView() {
 
             <form onSubmit={handleConfirmBooking} className="space-y-3.5 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Chọn ngày tư vấn</label>
+                <label className="font-bold text-slate-700 block mb-1">Chọn ngày tư vấn (Bắt buộc trong tương lai)</label>
                 <input
                   type="date"
                   required
                   defaultValue={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
                   onChange={(e) => setBookingDate(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 font-medium"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Khung giờ phù hợp</label>
+                <label className="font-bold text-slate-700 block mb-1">Khung giờ</label>
                 <select
                   value={bookingTime}
                   onChange={(e) => setBookingTime(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 font-medium"
+                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 font-medium bg-white"
                 >
+                  <option value="08:00">08:00 - 08:45 Sáng</option>
                   <option value="09:00">09:00 - 09:45 Sáng</option>
-                  <option value="10:30">10:30 - 11:15 Sáng</option>
+                  <option value="10:00">10:00 - 10:45 Sáng</option>
                   <option value="14:00">14:00 - 14:45 Chiều</option>
-                  <option value="15:30">15:30 - 16:15 Chiều</option>
-                  <option value="19:30">19:30 - 20:15 Tối</option>
+                  <option value="15:00">15:00 - 15:45 Chiều</option>
+                  <option value="16:00">16:00 - 16:45 Chiều</option>
                 </select>
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Mục tiêu & ghi chú cho Bác sĩ</label>
+                <label className="font-bold text-slate-700 block mb-1">Mục tiêu & Vấn đề cần tư vấn</label>
                 <textarea
                   rows={3}
                   value={bookingNotes}
                   onChange={(e) => setBookingNotes(e.target.value)}
-                  placeholder="Ví dụ: Cần tư vấn cách phân bổ đạm thực vật khi nhịn ăn 16/8..."
-                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 resize-none font-medium"
+                  placeholder="Ví dụ: Tư vấn thích nghi với chế độ ăn Blue Zones, kiểm soát cơn đói khi nhịn 16/8..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 font-medium resize-none"
                 />
               </div>
 
@@ -529,13 +579,13 @@ export default function ConsultationView() {
                 <button
                   type="button"
                   onClick={() => setIsBookModalOpen(false)}
-                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md"
+                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-md"
                 >
                   Xác Nhận Đặt Lịch
                 </button>
@@ -546,7 +596,7 @@ export default function ConsultationView() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: SOI DỮ LIỆU SỨC KHỎE QUA gRPC CỔNG 7002 */}
+      {/* MODAL 2: SOI TIẾN ĐỘ SỨC KHỎE ĐỒNG BỘ gRPC (:7002) */}
       {/* ========================================================================= */}
       {isGrpcModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -575,6 +625,17 @@ export default function ConsultationView() {
               <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
                 Đang gọi gRPC Client sang cổng 7002 của DietFasting Service...
               </div>
+            ) : grpcError ? (
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-extrabold text-rose-900">Không thể kết nối đến DietFasting gRPC Service (:7002):</div>
+                  <div>{grpcError}</div>
+                  <div className="text-[11px] text-rose-700 mt-1">
+                    💡 Hãy đảm bảo tiến trình <code>DietFasting.API</code> đang chạy và lắng nghe gRPC trên cổng <code>7002</code> (HTTP/2 cleartext).
+                  </div>
+                </div>
+              </div>
             ) : grpcReviewData ? (
               <div className="space-y-4 text-xs">
                 {/* 1. Fasting Summary */}
@@ -586,8 +647,8 @@ export default function ConsultationView() {
                   <div className="grid grid-cols-2 gap-2 text-slate-600">
                     <div>Trạng thái: <strong className="text-purple-700">{grpcReviewData.fastingSummary?.isCurrentlyFasting ? 'Đang Nhịn Ăn (Active)' : 'Đã dừng'}</strong></div>
                     <div>Chế độ: <strong>{grpcReviewData.fastingSummary?.currentFastingType || '16/8'}</strong></div>
-                    <div>Tổng phiên hoàn thành: <strong>{grpcReviewData.fastingSummary?.totalCompletedFasts || 24} phiên</strong></div>
-                    <div>Tổng giờ nhịn tích lũy: <strong>{grpcReviewData.fastingSummary?.totalFastedHours || 384} giờ</strong></div>
+                    <div>Tổng phiên hoàn thành: <strong>{grpcReviewData.fastingSummary?.totalCompletedFasts ?? 0} phiên</strong></div>
+                    <div>Tổng giờ nhịn tích lũy: <strong>{grpcReviewData.fastingSummary?.totalFastedHours ?? 0} giờ</strong></div>
                   </div>
                 </div>
 
@@ -598,10 +659,10 @@ export default function ConsultationView() {
                     Trụ Cột 2: Cân Bằng Dinh Dưỡng Trung Bình (Macros 30 Ngày)
                   </h4>
                   <div className="grid grid-cols-2 gap-2 text-slate-600">
-                    <div>Nạp trung bình: <strong className="text-slate-900">{grpcReviewData.nutritionSummary?.averageCalories || 1850} kcal/ngày</strong></div>
-                    <div>Đạm thực vật (Protein): <strong>{grpcReviewData.nutritionSummary?.averageProtein || 85} g</strong></div>
-                    <div>Tinh bột chậm (Carbs): <strong>{grpcReviewData.nutritionSummary?.averageCarbs || 210} g</strong></div>
-                    <div>Chất béo tốt (Fat): <strong>{grpcReviewData.nutritionSummary?.averageFat || 55} g</strong></div>
+                    <div>Nạp trung bình: <strong className="text-slate-900">{grpcReviewData.nutritionSummary?.averageCalories ?? 0} kcal/ngày</strong></div>
+                    <div>Đạm thực vật (Protein): <strong>{grpcReviewData.nutritionSummary?.averageProtein ?? 0} g</strong></div>
+                    <div>Tinh bột chậm (Carbs): <strong>{grpcReviewData.nutritionSummary?.averageCarbs ?? 0} g</strong></div>
+                    <div>Chất béo tốt (Fat): <strong>{grpcReviewData.nutritionSummary?.averageFat ?? 0} g</strong></div>
                   </div>
                 </div>
 
@@ -611,12 +672,20 @@ export default function ConsultationView() {
                     <ShieldCheck className="w-4 h-4 text-teal-600" />
                     Trụ Cột 3: Chu Kỳ Giả Nhịn Ăn FMD 5 Ngày
                   </h4>
-                  <p className="text-[11px] text-teal-800">
-                    Bệnh nhân đang ở <strong>Chu kỳ {grpcReviewData.fmdCycleStatus?.cycleNumber || 2} - Ngày {grpcReviewData.fmdCycleStatus?.currentDay || 3}</strong> (Trạng thái: {grpcReviewData.fmdCycleStatus?.status || 'Active'}).
-                  </p>
-                  <div className="text-[10px] text-teal-700 italic">
-                    Chuyên gia lưu ý: Ngày thứ 3 là giai đoạn quá trình tự thực bào (Autophagy) đạt đỉnh, khuyến nghị calo hôm nay được kiểm soát dưới 725 kcal.
-                  </div>
+                  {grpcReviewData.fmdCycleStatus?.hasActiveCycle ? (
+                    <>
+                      <p className="text-[11px] text-teal-800">
+                        Bệnh nhân đang ở <strong>Chu kỳ {grpcReviewData.fmdCycleStatus?.cycleNumber ?? 1} - Ngày {grpcReviewData.fmdCycleStatus?.currentDay ?? 1}</strong> (Trạng thái: {grpcReviewData.fmdCycleStatus?.status || 'Active'}).
+                      </p>
+                      <div className="text-[10px] text-teal-700 italic">
+                        Chuyên gia lưu ý: Ngày thứ 3 là giai đoạn quá trình tự thực bào (Autophagy) đạt đỉnh, khuyến nghị calo hôm nay được kiểm soát dưới 725 kcal.
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-teal-800">
+                      Hiện tại hội viên chưa có chu kỳ FMD 5 ngày đang hoạt động.
+                    </p>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -656,10 +725,12 @@ export default function ConsultationView() {
 
             <form onSubmit={handleSendAdvice} className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Tóm tắt đánh giá y khoa</label>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Tóm tắt đánh giá y khoa (Tối thiểu 5 ký tự)</label>
                 <textarea
                   rows={2}
                   required
+                  minLength={5}
+                  maxLength={2000}
                   value={adviceSummary}
                   onChange={(e) => setAdviceSummary(e.target.value)}
                   className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 resize-none font-medium"
@@ -667,10 +738,12 @@ export default function ConsultationView() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Khuyến nghị dinh dưỡng Blue Zones</label>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Khuyến nghị dinh dưỡng Blue Zones (Tối thiểu 5 ký tự)</label>
                 <textarea
                   rows={2}
                   required
+                  minLength={5}
+                  maxLength={2000}
                   value={dietaryRec}
                   onChange={(e) => setDietaryRec(e.target.value)}
                   className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 resize-none font-medium"
@@ -678,10 +751,12 @@ export default function ConsultationView() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Khuyến nghị nhịn ăn gián đoạn (IF / FMD)</label>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Khuyến nghị nhịn ăn gián đoạn (IF / FMD) (Tối thiểu 5 ký tự)</label>
                 <textarea
                   rows={2}
                   required
+                  minLength={5}
+                  maxLength={2000}
                   value={fastingRec}
                   onChange={(e) => setFastingRec(e.target.value)}
                   className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 resize-none font-medium"

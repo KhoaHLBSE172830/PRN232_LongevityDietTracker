@@ -1,5 +1,6 @@
 using BuildingBlocks.Common.Entities;
 using Consultation.Domain.Enums;
+using Consultation.Domain.Exceptions;
 
 namespace Consultation.Domain.Entities;
 
@@ -39,12 +40,21 @@ public class ConsultationSession : BaseEntity
 
     public static ConsultationSession Schedule(Guid userId, Guid nutritionistId, DateTime scheduledAt, int durationMinutes = 45, string? notes = null)
     {
+        var utcScheduled = scheduledAt.Kind == DateTimeKind.Utc 
+            ? scheduledAt 
+            : DateTime.SpecifyKind(scheduledAt, DateTimeKind.Utc);
+
+        if (utcScheduled <= DateTime.UtcNow)
+        {
+            throw new ConsultationBadRequestException("Thời gian đặt lịch tư vấn phải ở tương lai.");
+        }
+
         return new ConsultationSession
         {
             UserId = userId,
             NutritionistId = nutritionistId,
-            ScheduledAtUtc = scheduledAt,
-            DurationMinutes = durationMinutes,
+            ScheduledAtUtc = utcScheduled,
+            DurationMinutes = durationMinutes > 0 ? durationMinutes : 45,
             Status = ConsultationStatus.Pending,
             Notes = notes
         };
@@ -74,6 +84,16 @@ public class ConsultationSession : BaseEntity
 
     public void AttachAdvice(AdviceNote advice)
     {
+        if (Status == ConsultationStatus.Completed || AdviceNote != null)
+        {
+            throw new ConsultationConflictException("Phiên tư vấn này đã có phiếu lời khuyên hoặc đã hoàn tất.");
+        }
+
+        if (Status == ConsultationStatus.Cancelled)
+        {
+            throw new ConsultationBadRequestException("Không thể kê phiếu lời khuyên cho phiên tư vấn đã bị hủy.");
+        }
+
         AdviceNote = advice;
         Complete();
     }
@@ -100,5 +120,19 @@ public class AdviceNote : BaseEntity
         AdviceSummary = summary;
         DietaryRecommendations = dietary;
         FastingRecommendations = fasting;
+    }
+
+    public static AdviceNote Create(Guid sessionId, Guid userId, Guid nutritionistId, string summary, string dietary, string fasting)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+            throw new ConsultationBadRequestException("Tóm tắt đánh giá y khoa không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(dietary))
+            throw new ConsultationBadRequestException("Khuyến nghị dinh dưỡng không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(fasting))
+            throw new ConsultationBadRequestException("Khuyến nghị nhịn ăn không được để trống.");
+
+        return new AdviceNote(sessionId, userId, nutritionistId, summary, dietary, fasting);
     }
 }
