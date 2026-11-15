@@ -87,6 +87,37 @@ public class NotificationService : INotificationService
         return logs.Select(MapToResponse).ToList();
     }
 
+    public async Task<int> GetUnreadCountAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return (await _logRepository.GetUnreadByUserIdAsync(userId, cancellationToken)).Count;
+    }
+
+    public async Task<NotificationLogResponse> MarkAsReadAsync(Guid notificationId, Guid requesterUserId, bool isAdmin, CancellationToken cancellationToken = default)
+    {
+        var log = await _logRepository.FindByIdAsync(notificationId)
+            ?? throw new Domain.Exceptions.NotificationNotFoundException(notificationId);
+        if (!isAdmin && log.UserId != requesterUserId)
+            throw new BuildingBlocks.Common.Exceptions.ForbiddenException("Bạn chỉ được đánh dấu đã đọc thông báo của chính mình.");
+
+        log.MarkAsRead();
+        await _logRepository.UpdateAsync(log);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapToResponse(log);
+    }
+
+    public async Task<int> MarkAllAsReadAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var unread = await _logRepository.GetUnreadByUserIdAsync(userId, cancellationToken);
+        foreach (var log in unread)
+        {
+            log.MarkAsRead();
+            await _logRepository.UpdateAsync(log);
+        }
+        if (unread.Count > 0)
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return unread.Count;
+    }
+
     public async Task<NotificationPreferenceDto> GetUserPreferenceAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var pref = await _preferenceRepository.GetByUserIdAsync(userId, cancellationToken);
@@ -157,6 +188,8 @@ public class NotificationService : INotificationService
             log.SentAtUtc,
             log.ErrorMessage,
             log.EventId,
-            log.CreatedAt);
+            log.CreatedAt,
+            log.ReadAtUtc,
+            log.IsRead);
     }
 }

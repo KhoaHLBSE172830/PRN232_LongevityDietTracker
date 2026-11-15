@@ -10,6 +10,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
     {
         builder.ToTable("users");
         builder.HasKey(u => u.Id);
+        builder.Property(u => u.Id).ValueGeneratedNever();
         builder.HasIndex(u => u.Email).IsUnique();
         builder.Property(u => u.Email).HasMaxLength(256).IsRequired();
         builder.Property(u => u.FullName).HasMaxLength(256).IsRequired();
@@ -32,6 +33,7 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
     {
         builder.ToTable("refresh_tokens");
         builder.HasKey(r => r.Id);
+        builder.Property(r => r.Id).ValueGeneratedNever();
         builder.HasIndex(r => r.Token).IsUnique();
     }
 }
@@ -42,6 +44,7 @@ public class UserProfileConfiguration : IEntityTypeConfiguration<UserProfile>
     {
         builder.ToTable("user_profiles");
         builder.HasKey(p => p.Id);
+        builder.Property(p => p.Id).ValueGeneratedNever();
     }
 }
 

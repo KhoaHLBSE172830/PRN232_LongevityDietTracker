@@ -11,7 +11,15 @@ public record NutritionistProfileDto(
     string Certification,
     string Specialization,
     string Bio,
-    bool IsVerified);
+    bool IsVerified,
+    List<string>? Tags = null,
+    string? AvatarUrl = null);
+
+public record CancelConsultationDto(string? Reason = null);
+
+public record AvailabilitySlotDto(DateTime StartUtc, DateTime EndUtc, bool IsAvailable);
+
+public record NutritionistAvailabilityDto(Guid NutritionistId, DateOnly Date, List<AvailabilitySlotDto> Slots);
 
 public record BookConsultationDto(
     Guid UserId,

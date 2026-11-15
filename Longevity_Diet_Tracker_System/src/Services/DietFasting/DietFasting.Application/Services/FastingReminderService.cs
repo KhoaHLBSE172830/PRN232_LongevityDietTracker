@@ -78,6 +78,7 @@ public class FastingReminderService : IFastingReminderService
 
         var due = await _fastingRepository.WhereAsync(s =>
             s.Status == FastingStatus.InProgress &&
+            s.PausedAtUtc == null &&   // phiên tạm dừng không nhắc: mốc kết thúc sẽ dời khi tiếp tục
             s.TargetEndTimeUtc <= windowEnd &&
             s.TargetEndTimeUtc >= windowStart);
 
@@ -146,6 +147,7 @@ public class FastingReminderService : IFastingReminderService
     private static string FormatType(FastingType type) => type switch
     {
         FastingType.Circadian => "12:12",
+        FastingType.Intermittent14_10 => "14:10",
         FastingType.Intermittent16_8 => "16:8",
         FastingType.Intermittent18_6 => "18:6",
         FastingType.Intermittent20_4 => "20:4",

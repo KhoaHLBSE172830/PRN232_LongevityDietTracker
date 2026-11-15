@@ -1,40 +1,40 @@
 import React, { useState } from 'react';
 import { X, Mail, Lock, User, Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
-import { DEMO_USER } from '../../shared/services/apiClient';
 import { authApi } from './authApi';
 
 export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
-  if (!isOpen) return null;
-
   const [tab, setTab] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('minhanh.lifestyle@longevity.app');
   const [password, setPassword] = useState('Password123!');
   const [fullName, setFullName] = useState('Minh Anh');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!isOpen) return null;
+
+  const finish = (result) => {
+    onLoginSuccess(result.user, { demo: result.demo });
+    onClose();
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
+    setError('');
     try {
-      if (tab === 'login') {
-        await authApi.login({ email, password });
-      } else {
-        await authApi.register({ email, password, fullName });
-      }
-      onLoginSuccess(DEMO_USER);
-      onClose();
+      const result =
+        tab === 'login'
+          ? await authApi.login({ email, password })
+          : await authApi.register({ email, password, fullName });
+      finish(result);
     } catch (err) {
-      console.error('[Auth]:', err);
+      setError(err?.message || 'Không thể xử lý yêu cầu.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickDemoLogin = () => {
-    onLoginSuccess(DEMO_USER);
-    onClose();
-  };
+  const handleQuickDemoLogin = () => finish(authApi.quickDemo());
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
@@ -134,6 +134,12 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               />
             </div>
           </div>
+
+          {error && (
+            <p role="alert" className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
 
           <button
             type="submit"

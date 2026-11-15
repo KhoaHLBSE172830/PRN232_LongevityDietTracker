@@ -12,6 +12,8 @@ import {
   Loader2,
   WifiOff,
   Wifi,
+  Pause,
+  Flame,
 } from 'lucide-react';
 import { fastingApi, FASTING_TYPES, FastingApiError } from './fastingApi';
 
@@ -61,7 +63,7 @@ function ProgressRing({ progress, overdue, children }) {
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className={`${overdue ? 'stroke-emerald-500' : 'stroke-blue-600'} transition-[stroke-dashoffset] duration-700`}
+          className={`${overdue ? 'stroke-emerald-500' : 'stroke-emerald-600'} transition-[stroke-dashoffset] duration-700`}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{children}</div>
@@ -76,10 +78,22 @@ export default function FastingView() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState(FASTING_TYPES[1]); // mặc định 16:8
+  const [selected, setSelected] = useState(FASTING_TYPES.find((t) => t.label === '16:8')); // mặc định 16:8
   const [notes, setNotes] = useState('');
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [history, setHistory] = useState([]);
+  const [stats, setStats] = useState(null);
+
+  const loadExtras = useCallback(async () => {
+    const [h, st] = await Promise.all([fastingApi.getHistory(8), fastingApi.getStats()]);
+    setHistory(h);
+    setStats(st);
+  }, []);
+
+  useEffect(() => {
+    loadExtras();
+  }, [loadExtras, session?.id]);
 
   // Nạp phiên đang chạy khi mở trang (đồng hồ dựa trên giờ của server nên tải lại trang vẫn đúng).
   useEffect(() => {
@@ -140,6 +154,15 @@ export default function FastingView() {
       setSource({ mock: result.mock, reason: result.reason });
     });
 
+  const handlePauseResume = () =>
+    act(async () => {
+      const result = session.isPaused
+        ? await fastingApi.resumeFasting(session.id)
+        : await fastingApi.pauseFasting(session.id);
+      setSession(result.session);
+      setSource({ mock: result.mock, reason: result.reason });
+    });
+
   const handleCancel = () =>
     act(async () => {
       const result = await fastingApi.cancelFasting(session.id);
@@ -155,8 +178,9 @@ export default function FastingView() {
     const start = Date.parse(session.startTimeUtc);
     const target = Date.parse(session.targetEndTimeUtc);
     const total = target - start;
-    const elapsed = Math.max(0, now - start);
-    const remaining = target - now;
+    const effNow = session.isPaused && session.pausedAtUtc ? Date.parse(session.pausedAtUtc) : now;
+    const elapsed = Math.max(0, effNow - start);
+    const remaining = target - effNow;
     return {
       elapsed,
       remaining,
@@ -195,12 +219,12 @@ export default function FastingView() {
       {/* Header Banner */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
             <Timer className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
                 Nhịn Ăn Gián Đoạn (Intermittent Fasting)
               </span>
               {sourceBadge}
@@ -228,7 +252,7 @@ export default function FastingView() {
         /* ---------------------------------------------------------- PHIÊN ĐANG CHẠY */
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <div className="lg:col-span-3 bg-white rounded-3xl p-6 border border-slate-200 shadow-2xs flex flex-col items-center gap-5">
-            <div className="flex items-center gap-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1 rounded-lg">
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">
               <Clock className="w-3.5 h-3.5" />
               <span>
                 Phiên {session.typeLabel} · bắt đầu {formatDateTime(session.startTimeUtc)}
@@ -275,16 +299,35 @@ export default function FastingView() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ví dụ: hơi đói lúc 14 giờ, uống trà gừng"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
               />
             </div>
+
+            {session.isPaused && (
+              <div className="w-full p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                <Pause className="w-4 h-4 mt-0.5 shrink-0" />
+                <p>
+                  <strong>Đang tạm dừng.</strong> Đồng hồ đã dừng; khi tiếp tục, mốc kết thúc sẽ được dời đúng bằng thời gian đã tạm dừng.
+                </p>
+              </div>
+            )}
 
             <div className="w-full flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
+                onClick={handlePauseResume}
+                disabled={busy}
+                className="flex items-center justify-center gap-2 px-5 py-3 bg-white hover:bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all"
+              >
+                {session.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                <span>{session.isPaused ? 'Tiếp Tục' : 'Tạm Dừng'}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleEnd}
                 disabled={busy}
-                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all"
               >
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 fill-white" />}
                 <span>Kết Thúc Phiên Nhịn Ăn</span>
@@ -345,8 +388,8 @@ export default function FastingView() {
                 );
               })}
             </ul>
-            <div className="p-3 rounded-2xl bg-blue-50/60 border border-blue-200 text-blue-900 text-[11px] flex items-start gap-2">
-              <Droplets className="w-4 h-4 mt-0.5 shrink-0 text-blue-600" />
+            <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200 text-emerald-900 text-[11px] flex items-start gap-2">
+              <Droplets className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
               <p>
                 Uống đủ nước lọc hoặc trà thảo mộc không đường. Nếu thấy choáng váng hoặc mệt bất thường, hãy kết thúc phiên
                 và hỏi ý kiến chuyên gia dinh dưỡng.
@@ -391,7 +434,7 @@ export default function FastingView() {
               <p className="text-xs text-slate-500 mt-1">Phiên bắt đầu ngay khi bạn bấm nút bên dưới.</p>
             </div>
 
-            <div role="radiogroup" aria-label="Chế độ nhịn ăn" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div role="radiogroup" aria-label="Chế độ nhịn ăn" className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               {FASTING_TYPES.map((t) => {
                 const active = selected.value === t.value;
                 return (
@@ -403,8 +446,8 @@ export default function FastingView() {
                     onClick={() => setSelected(t)}
                     className={`text-left p-4 rounded-2xl border transition-all ${
                       active
-                        ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-600/20'
-                        : 'border-slate-200 bg-white hover:border-blue-300'
+                        ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600/20'
+                        : 'border-slate-200 bg-white hover:border-emerald-300'
                     }`}
                   >
                     <span className="block text-xl font-extrabold text-slate-900">{t.label}</span>
@@ -419,7 +462,7 @@ export default function FastingView() {
               type="button"
               onClick={handleStart}
               disabled={busy}
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all"
             >
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
               <span>Bắt Đầu Phiên {selected.label}</span>
@@ -428,13 +471,57 @@ export default function FastingView() {
         </div>
       )}
 
+      {/* Streak & lịch sử (chỉ khi dữ liệu thật từ máy chủ) */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            ['Chuỗi hiện tại', `${stats.currentStreakDays} ngày`, true],
+            ['Chuỗi dài nhất', `${stats.longestStreakDays} ngày`, false],
+            ['Phiên hoàn tất', stats.completedSessions, false],
+            ['Tổng giờ nhịn', `${Math.round(stats.totalFastedHours)} giờ`, false],
+          ].map(([label, value, flame]) => (
+            <div key={label} className="bg-white rounded-2xl p-4 border border-slate-200">
+              <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                {flame && <Flame className="w-3.5 h-3.5 text-amber-500" />}
+                {label}
+              </p>
+              <p className="mt-1 text-xl font-extrabold text-slate-900">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xs">
+          <h3 className="font-extrabold text-slate-800 text-sm mb-3">Lịch sử gần đây</h3>
+          <ul className="divide-y divide-slate-100">
+            {history.map((h) => (
+              <li key={h.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                <div>
+                  <p className="font-bold text-slate-800">{h.typeLabel} · {formatDateTime(h.startTimeUtc)}</p>
+                  {h.moodNotes && <p className="text-slate-500 mt-0.5">{h.moodNotes}</p>}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-bold text-slate-800">
+                    {h.actualFastedHours != null ? formatHours(h.actualFastedHours) : '—'}
+                  </p>
+                  <p className={h.status === 'Completed' ? 'text-emerald-700 font-semibold' : 'text-slate-400 font-semibold'}>
+                    {h.status === 'Completed' ? 'Hoàn tất' : 'Đã hủy'}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Thông tin tính năng */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-2xs space-y-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
             <Timer className="w-5 h-5" />
           </div>
-          <h4 className="font-extrabold text-slate-800 text-sm">Chế Độ 12:12, 16:8, 18:6 & 20:4</h4>
+          <h4 className="font-extrabold text-slate-800 text-sm">Chế Độ 12:12, 14:10, 16:8, 18:6 & 20:4</h4>
           <p className="text-xs text-slate-500 leading-relaxed">
             Theo dõi thời gian nhịn ăn thực tế và các mốc Đốt Mỡ (Ketosis), Tự Thực Bào (Autophagy). Mỗi người chỉ có một phiên
             đang chạy tại một thời điểm.

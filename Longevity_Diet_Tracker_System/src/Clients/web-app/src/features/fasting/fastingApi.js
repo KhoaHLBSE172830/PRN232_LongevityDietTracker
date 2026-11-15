@@ -18,6 +18,7 @@ const MOCK_KEY = 'longevity_fasting_mock_session';
 // Giá trị `value` khớp enum FastingType phía backend.
 export const FASTING_TYPES = [
   { value: 1, label: '12:12', hours: 12, title: 'Nhịn nhẹ 12 giờ', hint: 'Dễ bắt đầu, hợp nhịp sinh học' },
+  { value: 7, label: '14:10', hours: 14, title: 'Nhịn 14 giờ, ăn trong 10 giờ', hint: 'Bước đệm lên 16:8' },
   { value: 2, label: '16:8', hours: 16, title: 'Nhịn 16 giờ, ăn trong 8 giờ', hint: 'Phổ biến nhất' },
   { value: 3, label: '18:6', hours: 18, title: 'Nhịn 18 giờ, ăn trong 6 giờ', hint: 'Tự thực bào rõ hơn' },
   { value: 4, label: '20:4', hours: 20, title: 'Nhịn 20 giờ, ăn trong 4 giờ (OMAD)', hint: 'Dành cho người đã quen' },
@@ -25,6 +26,7 @@ export const FASTING_TYPES = [
 
 const TYPE_BY_NAME = {
   Circadian: 1,
+  Intermittent14_10: 7,
   Intermittent16_8: 2,
   Intermittent18_6: 3,
   Intermittent20_4: 4,
@@ -130,6 +132,8 @@ function normalize(raw) {
     status,
     actualFastedHours: raw.actualFastedHours ?? null,
     moodNotes: raw.moodNotes ?? null,
+    isPaused: raw.isPaused ?? !!raw.pausedAtUtc,
+    pausedAtUtc: asIso(raw.pausedAtUtc),
   };
 }
 
@@ -181,15 +185,41 @@ const mock = {
     return normalize(session);
   },
 
-  async finish(sessionId, status, note) {
+  async pause(sessionId) {
     const s = readMock();
+    if (!s || s.id !== sessionId || s.status !== 'InProgress') throw new FastingApiError('Không tìm thấy phiên đang chạy.', { status: 404 });
+    if (s.pausedAtUtc) throw new FastingApiError('Phiên đã đang tạm dừng.', { status: 400 });
+    s.pausedAtUtc = new Date().toISOString();
+    writeMock(s);
+    return normalize(s);
+  },
+
+  async resume(sessionId) {
+    const s = readMock();
+    if (!s || s.id !== sessionId || s.status !== 'InProgress') throw new FastingApiError('Không tìm thấy phiên đang chạy.', { status: 404 });
+    if (!s.pausedAtUtc) throw new FastingApiError('Phiên không ở trạng thái tạm dừng.', { status: 400 });
+    const pausedMs = Date.now() - Date.parse(s.pausedAtUtc);
+    s.targetEndTimeUtc = new Date(Date.parse(s.targetEndTimeUtc) + pausedMs).toISOString();
+    s.totalPausedMs = (s.totalPausedMs || 0) + pausedMs;
+    s.pausedAtUtc = null;
+    writeMock(s);
+    return normalize(s);
+  },
+
+  async finish(sessionId, status, note) {
+    let s = readMock();
     if (!s || s.id !== sessionId) throw new FastingApiError('Không tìm thấy phiên nhịn ăn.', { status: 404 });
+    if (s.pausedAtUtc) {
+      // Kết thúc khi đang tạm dừng: tính nốt đoạn tạm dừng.
+      s.totalPausedMs = (s.totalPausedMs || 0) + (Date.now() - Date.parse(s.pausedAtUtc));
+      s.pausedAtUtc = null;
+    }
     if (s.status !== 'InProgress') {
       throw new FastingApiError(`Không thể kết thúc phiên đang ở trạng thái '${s.status}'.`, { status: 400 });
     }
     s.status = status;
     s.actualEndTimeUtc = new Date().toISOString();
-    s.actualFastedHours = (Date.parse(s.actualEndTimeUtc) - Date.parse(s.startTimeUtc)) / 3600e3;
+    s.actualFastedHours = Math.max(0, (Date.parse(s.actualEndTimeUtc) - Date.parse(s.startTimeUtc) - (s.totalPausedMs || 0)) / 3600e3);
     if (note) s.moodNotes = note;
     writeMock(s);
     return normalize(s);
@@ -256,6 +286,45 @@ export const fastingApi = {
       },
       () => mock.finish(sessionId, 'Completed', moodNotes)
     );
+  },
+
+  /** Tạm dừng phiên (đồng hồ dừng, mốc kết thúc dời khi tiếp tục). */
+  pauseFasting(sessionId) {
+    return run(
+      async ({ token }) => normalize((await apiClient.post(`/api/fasting/${sessionId}/pause`, {}, authConfig(token))).data?.data),
+      () => mock.pause(sessionId)
+    );
+  },
+
+  resumeFasting(sessionId) {
+    return run(
+      async ({ token }) => normalize((await apiClient.post(`/api/fasting/${sessionId}/resume`, {}, authConfig(token))).data?.data),
+      () => mock.resume(sessionId)
+    );
+  },
+
+  /** Lịch sử phiên đã kết thúc/hủy (chỉ có khi đã đăng nhập và kết nối được máy chủ). */
+  async getHistory(limit = 10) {
+    const auth = getSession();
+    if (!auth) return [];
+    try {
+      const res = await apiClient.get(`/api/fasting/user/${auth.userId}/history?limit=${limit}`, authConfig(auth.token));
+      return (res.data?.data ?? []).map(normalize);
+    } catch {
+      return [];
+    }
+  },
+
+  /** Thống kê streak (chỉ khi đăng nhập thật). Trả null nếu không có. */
+  async getStats() {
+    const auth = getSession();
+    if (!auth) return null;
+    try {
+      const res = await apiClient.get(`/api/fasting/user/${auth.userId}/stats`, authConfig(auth.token));
+      return res.data?.data ?? null;
+    } catch {
+      return null;
+    }
   },
 
   /** Hủy phiên đang chạy. */

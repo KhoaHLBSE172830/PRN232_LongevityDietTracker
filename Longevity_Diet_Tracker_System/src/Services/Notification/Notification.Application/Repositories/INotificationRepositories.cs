@@ -6,6 +6,7 @@ namespace Notification.Application.Repositories;
 public interface INotificationLogRepository : IGenericRepository<NotificationLog>
 {
     Task<IReadOnlyList<NotificationLog>> GetLogsByUserIdAsync(Guid userId, int limit = 50, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<NotificationLog>> GetUnreadByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<bool> HasEventBeenProcessedAsync(string eventId, CancellationToken cancellationToken = default);
 }
 

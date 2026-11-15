@@ -13,6 +13,13 @@ public class NutritionistProfile : BaseEntity
     public string Bio { get; set; } = string.Empty;
     public bool IsVerified { get; set; }
 
+    /// <summary>Các thẻ chuyên môn, phân tách bằng dấu phẩy (vd. "Fasting,FMD,Macros").</summary>
+    public string Tags { get; set; } = string.Empty;
+    public string? AvatarUrl { get; set; }
+
+    public IReadOnlyList<string> TagList =>
+        Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     public ICollection<ConsultationSession> Sessions { get; set; } = new List<ConsultationSession>();
 
     public NutritionistProfile() { }
@@ -40,9 +47,14 @@ public class ConsultationSession : BaseEntity
 
     public static ConsultationSession Schedule(Guid userId, Guid nutritionistId, DateTime scheduledAt, int durationMinutes = 45, string? notes = null)
     {
-        var utcScheduled = scheduledAt.Kind == DateTimeKind.Utc 
-            ? scheduledAt 
-            : DateTime.SpecifyKind(scheduledAt, DateTimeKind.Utc);
+        // N5: quy đổi đúng múi giờ. Chuỗi có offset (vd +07:00) được .NET đọc thành Local: phải ToUniversalTime(),
+        // KHÔNG được chỉ gán nhãn Utc (sẽ lệch đúng bằng offset). Chuỗi không có múi giờ (Unspecified) coi là UTC.
+        var utcScheduled = scheduledAt.Kind switch
+        {
+            DateTimeKind.Utc => scheduledAt,
+            DateTimeKind.Local => scheduledAt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(scheduledAt, DateTimeKind.Utc)
+        };
 
         if (utcScheduled <= DateTime.UtcNow)
         {
@@ -60,8 +72,16 @@ public class ConsultationSession : BaseEntity
         };
     }
 
+    /// <summary>Thời lượng mỗi buổi tư vấn (phút) dùng khi tính khung giờ trống.</summary>
+    public DateTime EndAtUtc => ScheduledAtUtc.AddMinutes(DurationMinutes);
+
+    public bool BlocksSlot => Status is ConsultationStatus.Pending or ConsultationStatus.Confirmed;
+
     public void Confirm()
     {
+        if (Status != ConsultationStatus.Pending)
+            throw new ConsultationConflictException($"Chỉ xác nhận được lịch đang chờ (hiện tại: {Status}).");
+
         Status = ConsultationStatus.Confirmed;
         UpdatedAt = DateTime.UtcNow;
     }
@@ -74,6 +94,9 @@ public class ConsultationSession : BaseEntity
 
     public void Cancel(string? reason = null)
     {
+        if (Status is ConsultationStatus.Completed or ConsultationStatus.Cancelled)
+            throw new ConsultationConflictException($"Không thể hủy lịch ở trạng thái {Status}.");
+
         Status = ConsultationStatus.Cancelled;
         if (!string.IsNullOrEmpty(reason))
         {

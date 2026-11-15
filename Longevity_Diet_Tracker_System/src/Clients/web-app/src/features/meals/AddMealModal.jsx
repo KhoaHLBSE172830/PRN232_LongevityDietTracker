@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentUser } from '../../shared/services/userStore';
 import { 
   X, 
   Search, 
@@ -13,8 +14,7 @@ import {
 import { DEMO_USER, LONGEVITY_SUPERFOODS } from '../../shared/services/apiClient';
 import { mealsApi } from './mealsApi';
 
-export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onMealAdded }) {
-  if (!isOpen) return null;
+export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onMealAdded, date, editingMeal = null }) {
 
   const [mealType, setMealType] = useState(defaultMealType);
   const [satiety, setSatiety] = useState(80);
@@ -37,6 +37,31 @@ export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onM
   useEffect(() => {
     setMealType(defaultMealType);
   }, [defaultMealType]);
+
+  // Mở ở chế độ sửa: nạp sẵn món/ghi chú/mức no của bữa đang sửa; mở để thêm mới: làm trống.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingMeal) {
+      const per100 = (v, size) => (Number(v) || 0) * (100 / (Number(size) || 100));
+      setMealType(editingMeal.mealType);
+      setSatiety(editingMeal.satietyPercentage || 80);
+      setNotes(editingMeal.notes || '');
+      setSelectedFoods(
+        (editingMeal.foodItems || []).map((f) => ({
+          ...f,
+          originalCalories: per100(f.calories, f.servingSize),
+          originalProtein: per100(f.proteinGrams, f.servingSize),
+          originalCarbs: per100(f.carbsGrams, f.servingSize),
+          originalFat: per100(f.fatGrams, f.servingSize),
+          originalFiber: per100(f.fiberGrams, f.servingSize),
+        }))
+      );
+    } else {
+      setSelectedFoods([]);
+      setNotes('');
+      setSatiety(80);
+    }
+  }, [isOpen, editingMeal]);
 
   // Debounced search
   useEffect(() => {
@@ -138,11 +163,21 @@ export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onM
   const handleSubmit = async () => {
     if (selectedFoods.length === 0) return;
 
+    // Ghi vào ngày đang xem (giữ giờ hiện tại) để bữa hiện đúng ngày sau khi tải lại.
+    const loggedAtIso = (() => {
+      if (!date) return new Date().toISOString();
+      const d = new Date(date);
+      const now = new Date();
+      d.setHours(now.getHours(), now.getMinutes(), 0, 0);
+      return d.toISOString();
+    })();
+
     setIsSubmitting(true);
     const payload = {
-      userId: DEMO_USER.id,
+      userId: getCurrentUser().id,
       mealType: Number(mealType),
-      loggedAt: new Date().toISOString(),
+      loggedAt: loggedAtIso,
+      utcOffsetMinutes: -new Date().getTimezoneOffset(),
       isHaraHachiBuCompliant: satiety <= 80,
       satietyPercentage: Number(satiety),
       notes: notes.trim() || undefined,
@@ -160,7 +195,9 @@ export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onM
     };
 
     try {
-      const created = await mealsApi.logMeal(payload);
+      const created = editingMeal
+        ? await mealsApi.updateMeal(editingMeal.id, payload)
+        : await mealsApi.logMeal(payload);
       onMealAdded(created);
       onClose();
     } catch (err) {
@@ -169,6 +206,8 @@ export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onM
       setIsSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
@@ -561,7 +600,7 @@ export default function AddMealModal({ isOpen, onClose, defaultMealType = 1, onM
               className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5"
             >
               <Check className="w-4 h-4" />
-              <span>{isSubmitting ? 'Đang lưu...' : 'Ghi Nhận Vào Nhật Ký'}</span>
+              <span>{isSubmitting ? 'Đang lưu...' : editingMeal ? 'Lưu Thay Đổi Bữa Ăn' : 'Ghi Nhận Vào Nhật Ký'}</span>
             </button>
           </div>
         </div>

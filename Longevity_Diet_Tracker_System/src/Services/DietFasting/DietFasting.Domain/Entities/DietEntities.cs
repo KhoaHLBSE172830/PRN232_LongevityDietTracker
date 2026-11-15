@@ -52,6 +52,31 @@ public class MealLog : BaseEntity
         TotalFiberGrams = FoodItems.Sum(f => f.FiberGrams);
     }
 
+    public void UpdateDetails(MealType mealType, DateTime? loggedAt, string? notes, bool isHaraHachiBu, int satietyPercentage)
+    {
+        MealType = mealType;
+        if (loggedAt.HasValue) LoggedAt = loggedAt.Value;
+        Notes = notes;
+        IsHaraHachiBuCompliant = isHaraHachiBu;
+        SatietyPercentage = satietyPercentage;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void ReplaceFoodItems(IEnumerable<MealFoodItem> items)
+    {
+        FoodItems.Clear();
+        foreach (var item in items) FoodItems.Add(item);
+        RecalculateTotals();
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void ClearThreshold()
+    {
+        ExceededThreshold = false;
+        ThresholdViolationNotes = null;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
     public void MarkThresholdExceeded(string reason)
     {
         ExceededThreshold = true;
@@ -93,9 +118,19 @@ public class FastingSession : BaseEntity
     /// </summary>
     public string? NotificationEmail { get; set; }
 
-    public double TargetHours => (TargetEndTimeUtc - StartTimeUtc).TotalHours;
-    public double? ActualFastedHours => ActualEndTimeUtc.HasValue 
-        ? (ActualEndTimeUtc.Value - StartTimeUtc).TotalHours 
+    /// <summary>Thời điểm bắt đầu tạm dừng; null nếu đang chạy. Phiên tạm dừng vẫn ở trạng thái InProgress
+    /// (giữ ràng buộc "tối đa 1 phiên đang chạy mỗi người").</summary>
+    public DateTime? PausedAtUtc { get; set; }
+
+    /// <summary>Tổng thời gian đã tạm dừng (giây), không tính đoạn đang tạm dừng hiện tại.</summary>
+    public double TotalPausedSeconds { get; set; }
+
+    public bool IsPaused => PausedAtUtc.HasValue;
+
+    /// <summary>Mục tiêu nhịn (giờ) không bao gồm thời gian tạm dừng.</summary>
+    public double TargetHours => (TargetEndTimeUtc - StartTimeUtc).TotalHours - TotalPausedSeconds / 3600.0;
+    public double? ActualFastedHours => ActualEndTimeUtc.HasValue
+        ? Math.Max(0, (ActualEndTimeUtc.Value - StartTimeUtc).TotalHours - TotalPausedSeconds / 3600.0)
         : null;
 
     public FastingSession() { }
@@ -135,10 +170,43 @@ public class FastingSession : BaseEntity
             : trimmed;
     }
 
+    /// <summary>Tạm dừng: đồng hồ dừng cho đến khi Resume.</summary>
+    public void Pause(DateTime now)
+    {
+        if (Status != FastingStatus.InProgress)
+            throw new InvalidFastingSessionException($"Cannot pause session in '{Status}' status.");
+        if (IsPaused)
+            throw new InvalidFastingSessionException("Session is already paused.");
+
+        PausedAtUtc = now;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Tiếp tục: dời mốc kết thúc dự kiến đúng bằng thời gian đã tạm dừng.</summary>
+    public void Resume(DateTime now)
+    {
+        if (Status != FastingStatus.InProgress)
+            throw new InvalidFastingSessionException($"Cannot resume session in '{Status}' status.");
+        if (!IsPaused)
+            throw new InvalidFastingSessionException("Session is not paused.");
+
+        AccountPause(now);
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    private void AccountPause(DateTime now)
+    {
+        var pausedFor = Math.Max(0, (now - PausedAtUtc!.Value).TotalSeconds);
+        TotalPausedSeconds += pausedFor;
+        TargetEndTimeUtc = TargetEndTimeUtc.AddSeconds(pausedFor);
+        PausedAtUtc = null;
+    }
+
     public void Complete(DateTime actualEndTime, string? notes = null)
     {
         if (Status != FastingStatus.InProgress)
             throw new InvalidFastingSessionException($"Cannot complete session in '{Status}' status.");
+        if (IsPaused) AccountPause(actualEndTime);
 
         Status = FastingStatus.Completed;
         ActualEndTimeUtc = actualEndTime;
@@ -151,8 +219,10 @@ public class FastingSession : BaseEntity
         if (Status != FastingStatus.InProgress)
             throw new InvalidFastingSessionException($"Cannot cancel session in '{Status}' status.");
 
+        var now = DateTime.UtcNow;
+        if (IsPaused) AccountPause(now);
         Status = FastingStatus.Cancelled;
-        ActualEndTimeUtc = DateTime.UtcNow;
+        ActualEndTimeUtc = now;
         if (!string.IsNullOrEmpty(reason)) MoodNotes = reason;
         UpdatedAt = DateTime.UtcNow;
     }
@@ -166,8 +236,20 @@ public class FmdCycle : BaseEntity
     public DateTime EndDate { get; set; }
     public int CurrentDay { get; set; } = 1;
     public FmdStatus Status { get; set; } = FmdStatus.Planned;
+    // Hai cột cũ giữ nguyên để không đổi schema; định mức thực tế theo từng ngày lấy từ DefaultCaloriesForDay / bảng fmd_rules.
     public double TargetCaloriesDay1 { get; set; } = 1100;
-    public double TargetCaloriesDays2To5 { get; set; } = 725;
+    public double TargetCaloriesDays2To5 { get; set; } = 760;
+
+    /// <summary>Định mức kcal mặc định theo ngày (thiết kế Figma): 1100 / 780 / 760 / 760 / 780.</summary>
+    public static double DefaultCaloriesForDay(int day) => day switch
+    {
+        1 => 1100,
+        2 => 780,
+        3 => 760,
+        4 => 760,
+        5 => 780,
+        _ => 760
+    };
 
     public FmdCycle() { }
 
@@ -182,7 +264,7 @@ public class FmdCycle : BaseEntity
             CurrentDay = 1,
             Status = FmdStatus.Active,
             TargetCaloriesDay1 = 1100,
-            TargetCaloriesDays2To5 = 725
+            TargetCaloriesDays2To5 = 760
         };
     }
 
@@ -201,7 +283,7 @@ public class FmdCycle : BaseEntity
 
     public (bool isExceeded, string? reason) CheckThreshold(double totalCaloriesToday)
     {
-        var maxLimit = CurrentDay == 1 ? TargetCaloriesDay1 : TargetCaloriesDays2To5;
+        var maxLimit = DefaultCaloriesForDay(CurrentDay);
         if (totalCaloriesToday > maxLimit)
         {
             return (true, $"Total calories for Day {CurrentDay} ({totalCaloriesToday:F0} kcal) exceeded FMD threshold ({maxLimit:F0} kcal).");
@@ -217,6 +299,9 @@ public class FmdCycle : BaseEntity
 
     public void Cancel()
     {
+        if (Status is FmdStatus.Completed or FmdStatus.Cancelled)
+            throw new InvalidFmdCycleException($"Cannot cancel a cycle in '{Status}' status.");
+
         Status = FmdStatus.Cancelled;
         UpdatedAt = DateTime.UtcNow;
     }
@@ -269,4 +354,50 @@ public class MealTemplate : BaseEntity
     public bool IsHaraHachiBuOptimized { get; set; } = true;
     public bool IsAdminTemplate { get; set; } = true;
     public string? RecipeContentJson { get; set; }
+}
+
+
+/// <summary>Thói quen sống khỏe theo ngày của một người dùng: lượng nước đã uống và số phút vận động.</summary>
+public class HabitLog : BaseEntity
+{
+    public const int MaxWaterMl = 10000;
+    public const int MaxMovementMinutes = 1440;
+
+    public Guid UserId { get; set; }
+    /// <summary>Ngày theo giờ địa phương của người dùng (client gửi yyyy-MM-dd).</summary>
+    public DateOnly LogDate { get; set; }
+    public int WaterMl { get; set; }
+    public int MovementMinutes { get; set; }
+
+    public HabitLog() { }
+
+    public static HabitLog Create(Guid userId, DateOnly date)
+    {
+        if (userId == Guid.Empty)
+            throw new InvalidHabitLogException("UserId is required.");
+        return new HabitLog { UserId = userId, LogDate = date };
+    }
+
+    /// <summary>Đặt giá trị tuyệt đối (null = giữ nguyên).</summary>
+    public void Set(int? waterMl, int? movementMinutes)
+    {
+        if (waterMl.HasValue) WaterMl = Validate(waterMl.Value, MaxWaterMl, "WaterMl");
+        if (movementMinutes.HasValue) MovementMinutes = Validate(movementMinutes.Value, MaxMovementMinutes, "MovementMinutes");
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Cộng thêm (có thể âm để hoàn tác), kết quả luôn nằm trong [0, tối đa].</summary>
+    public void Add(int waterMl, int movementMinutes)
+    {
+        WaterMl = Math.Clamp(WaterMl + waterMl, 0, MaxWaterMl);
+        MovementMinutes = Math.Clamp(MovementMinutes + movementMinutes, 0, MaxMovementMinutes);
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    private static int Validate(int value, int max, string name)
+    {
+        if (value < 0 || value > max)
+            throw new InvalidHabitLogException($"{name} must be between 0 and {max}.");
+        return value;
+    }
 }

@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { getSession } from './session';
 
 // YARP Gateway (Mặc định kết nối cổng 7159 HTTPS hoặc 5000 HTTP)
-export const GATEWAY_BASE_URL = 'https://localhost:7159';
+export const GATEWAY_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'https://localhost:7159';
 
 export const apiClient = axios.create({
   baseURL: GATEWAY_BASE_URL,
@@ -10,6 +11,26 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Tự gắn Bearer token (nếu có JWT hợp lệ). Request nào đã tự đặt Authorization thì giữ nguyên.
+apiClient.interceptors.request.use((config) => {
+  const session = getSession();
+  if (session && !config.headers?.Authorization) {
+    config.headers.Authorization = `Bearer ${session.token}`;
+  }
+  return config;
+});
+
+// 401 => báo cho UI (AuthModal có thể lắng nghe sự kiện này để mở lại form đăng nhập).
+apiClient.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err?.response?.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+    return Promise.reject(err);
+  }
+);
 
 // Tài khoản người dùng thử nghiệm
 export const DEMO_USER = {

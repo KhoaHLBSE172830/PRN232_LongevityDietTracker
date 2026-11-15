@@ -28,6 +28,8 @@ public class ConsultationsController : ControllerBase
     private bool IsNutritionistOrAdmin =>
         User.IsInRole("Nutritionist") || User.IsInRole("Admin");
 
+    private ConsultationCaller CurrentCaller => new(CurrentUserId, User.IsInRole("Admin"));
+
     /// <summary>
     /// Lấy danh sách các chuyên gia dinh dưỡng được chứng nhận (công khai cho hội viên tham khảo)
     /// </summary>
@@ -59,6 +61,33 @@ public class ConsultationsController : ControllerBase
         var effectiveDto = dto with { UserId = CurrentUserId };
         var result = await _consultationService.BookSessionAsync(effectiveDto);
         return SuccessResp.Created(result, "Đặt lịch tư vấn với chuyên gia thành công");
+    }
+
+    /// <summary>Khung giờ trống của bác sĩ trong một ngày (giờ làm việc cố định theo UTC+7).</summary>
+    [AllowAnonymous]
+    [HttpGet("nutritionists/{id:guid}/availability")]
+    public async Task<IActionResult> GetAvailability(Guid id, [FromQuery] DateOnly? date)
+    {
+        var day = date ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(7));
+        var result = await _consultationService.GetAvailabilityAsync(id, day);
+        return SuccessResp.Ok(result, "Lấy khung giờ trống thành công");
+    }
+
+    /// <summary>Bác sĩ phụ trách (hoặc Admin) xác nhận lịch hẹn đang chờ.</summary>
+    [Authorize(Roles = "Nutritionist,Admin")]
+    [HttpPost("{sessionId:guid}/confirm")]
+    public async Task<IActionResult> ConfirmSession(Guid sessionId)
+    {
+        var result = await _consultationService.ConfirmSessionAsync(sessionId, CurrentCaller);
+        return SuccessResp.Ok(result, "Đã xác nhận lịch tư vấn");
+    }
+
+    /// <summary>Hội viên (chủ lịch), bác sĩ phụ trách hoặc Admin hủy lịch hẹn.</summary>
+    [HttpPost("{sessionId:guid}/cancel")]
+    public async Task<IActionResult> CancelSession(Guid sessionId, [FromBody] CancelConsultationDto? dto)
+    {
+        var result = await _consultationService.CancelSessionAsync(sessionId, CurrentCaller, dto?.Reason);
+        return SuccessResp.Ok(result, "Đã hủy lịch tư vấn");
     }
 
     /// <summary>
@@ -94,7 +123,7 @@ public class ConsultationsController : ControllerBase
     [HttpGet("nutritionist/{nutritionistId:guid}")]
     public async Task<IActionResult> GetNutritionistSessions(Guid nutritionistId)
     {
-        var result = await _consultationService.GetNutritionistSessionsAsync(nutritionistId);
+        var result = await _consultationService.GetNutritionistSessionsAsync(nutritionistId, CurrentCaller);
         return SuccessResp.Ok(result, "Lấy lịch làm việc của bác sĩ thành công");
     }
 
@@ -105,7 +134,7 @@ public class ConsultationsController : ControllerBase
     [HttpPost("advice")]
     public async Task<IActionResult> SendAdvice([FromBody] SendAdviceDto dto)
     {
-        var result = await _consultationService.SendAdviceAsync(dto, CurrentUserId);
+        var result = await _consultationService.SendAdviceAsync(dto, CurrentCaller);
         return SuccessResp.Created(result, "Gửi phiếu lời khuyên thành công và đã kích hoạt thông báo qua RabbitMQ");
     }
 
@@ -116,7 +145,7 @@ public class ConsultationsController : ControllerBase
     [HttpGet("review-user/{userId:guid}")]
     public async Task<IActionResult> ReviewUserProgress(Guid userId)
     {
-        var result = await _consultationService.ReviewUserDietProgressAsync(CurrentUserId, userId);
+        var result = await _consultationService.ReviewUserDietProgressAsync(CurrentCaller, userId);
         return SuccessResp.Ok(result, "Truy vấn snapshot tiến độ dinh dưỡng qua gRPC thành công");
     }
 }

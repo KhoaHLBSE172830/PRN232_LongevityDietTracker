@@ -33,7 +33,17 @@ public record CreateMealLogDto(
     List<CreateFoodItemDto> FoodItems,
     string? Notes = null,
     bool IsHaraHachiBuCompliant = true,
-    int SatietyPercentage = 80);
+    int SatietyPercentage = 80,
+    int UtcOffsetMinutes = 0);
+
+public record UpdateMealLogDto(
+    MealType MealType,
+    List<CreateFoodItemDto> FoodItems,
+    DateTime? LoggedAt = null,
+    string? Notes = null,
+    bool IsHaraHachiBuCompliant = true,
+    int SatietyPercentage = 80,
+    int UtcOffsetMinutes = 0);
 
 public record MealLogResponseDto(
     Guid Id,
@@ -76,7 +86,16 @@ public record FastingSessionResponseDto(
     DateTime? ActualEndTimeUtc,
     FastingStatus Status,
     double? ActualFastedHours,
-    string? MoodNotes = null);
+    string? MoodNotes = null,
+    bool IsPaused = false,
+    DateTime? PausedAtUtc = null);
+
+/// <summary>Thống kê chuỗi ngày nhịn ăn của một người dùng (tính theo ngày UTC của phiên Completed).</summary>
+public record FastingStatsDto(
+    int CurrentStreakDays,
+    int LongestStreakDays,
+    int CompletedSessions,
+    double TotalFastedHours);
 
 // FMD Cycle DTOs
 public record StartFmdCycleDto(
@@ -139,3 +158,25 @@ public record CreateMealTemplateRequest(
     bool IsPlantSlantCompliant = true,
     bool IsHaraHachiBuOptimized = true,
     string? RecipeContentJson = null);
+
+
+public record HabitDayDto(
+    DateOnly Date,
+    int WaterMl,
+    int MovementMinutes,
+    int WaterGoalMl,
+    int MovementGoalMinutes);
+
+/// <summary>Đặt giá trị tuyệt đối trong ngày; trường null giữ nguyên.</summary>
+public record SetHabitDto(int? WaterMl = null, int? MovementMinutes = null);
+
+/// <summary>Cộng thêm (số âm để hoàn tác).</summary>
+public record AddHabitDto(int WaterMl = 0, int MovementMinutes = 0);
+
+
+/// <summary>Áp dụng mẫu bữa ăn thành một bữa ăn thật của người dùng.</summary>
+public record ApplyMealTemplateDto(
+    MealType MealType,
+    DateTime? LoggedAt = null,
+    int UtcOffsetMinutes = 0,
+    int SatietyPercentage = 80);

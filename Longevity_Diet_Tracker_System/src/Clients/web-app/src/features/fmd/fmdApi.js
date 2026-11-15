@@ -36,12 +36,16 @@ export function getEffectiveUserId(fallbackId = DEMO_USER.id) {
   return getAuthSession()?.userId || fallbackId;
 }
 
+// Định mức kcal theo thiết kế Figma (đã chốt). Backend (Quốc) cần chỉnh rule cho khớp: 1100/780/760/760/780.
+export const FIGMA_FMD_KCAL = { 1: 1100, 2: 780, 3: 760, 4: 760, 5: 780 };
+export const kcalForDay = (day) => FIGMA_FMD_KCAL[day] ?? 760;
+
 export const DEFAULT_FMD_RULES = [
   { dayNumber: 1, maxCalories: 1100, targetProteinPercent: 11, targetFatPercent: 46, targetCarbPercent: 43, description: 'Ngày Khởi Động: Chuẩn bị cơ thể chuyển đổi năng lượng' },
-  { dayNumber: 2, maxCalories: 725, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Đốt mỡ sâu & Kích hoạt tái sinh tế bào gốc' },
-  { dayNumber: 3, maxCalories: 725, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Thanh lọc tế bào lão hóa và giảm chỉ số viêm' },
-  { dayNumber: 4, maxCalories: 725, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Tái tạo hệ miễn dịch và trẻ hóa sinh học' },
-  { dayNumber: 5, maxCalories: 725, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Hoàn tất chu kỳ & Phục hồi cơ quan nội tạng' },
+  { dayNumber: 2, maxCalories: 780, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Đốt mỡ sâu & Kích hoạt tái sinh tế bào gốc' },
+  { dayNumber: 3, maxCalories: 760, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Thanh lọc tế bào lão hóa và giảm chỉ số viêm' },
+  { dayNumber: 4, maxCalories: 760, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Tái tạo hệ miễn dịch và trẻ hóa sinh học' },
+  { dayNumber: 5, maxCalories: 780, targetProteinPercent: 9, targetFatPercent: 44, targetCarbPercent: 47, description: 'Hoàn tất chu kỳ & Phục hồi cơ quan nội tạng' },
 ];
 
 export const fmdApi = {
@@ -84,12 +88,36 @@ export const fmdApi = {
     }
   },
 
+  // GET /api/fmd/user/{id}/history — lịch sử các chu kỳ (mới nhất trước)
+  async getHistory(userId = DEMO_USER.id) {
+    const effectiveUserId = getEffectiveUserId(userId);
+    try {
+      const res = await apiClient.get(`/api/fmd/user/${effectiveUserId}/history`, getRequestConfig());
+      return res.data?.data ?? [];
+    } catch (err) {
+      console.warn('[FMD API]: Lấy lịch sử chu kỳ:', err.message);
+      return [];
+    }
+  },
+
+  // POST /api/fmd/{cycleId}/cancel — hủy chu kỳ đang chạy (ném lỗi để UI hiển thị)
+  async cancelCycle(cycleId) {
+    try {
+      const res = await apiClient.post(`/api/fmd/${cycleId}/cancel`, {}, getRequestConfig());
+      return res.data?.data ?? null;
+    } catch (err) {
+      throw new Error(err?.response?.data?.Message || err?.response?.data?.message || 'Không hủy được chu kỳ FMD.');
+    }
+  },
+
   // GET /api/admin/fmd-rules — Lấy danh mục định mức calo 5 ngày FMD
   async getRules() {
     try {
       const res = await apiClient.get('/api/admin/fmd-rules', getRequestConfig());
       const data = res.data?.data;
-      return Array.isArray(data) && data.length > 0 ? data : DEFAULT_FMD_RULES;
+      if (!Array.isArray(data) || data.length === 0) return DEFAULT_FMD_RULES;
+      // Hiển thị theo Figma; giữ số của máy chủ để cảnh báo lệch.
+      return data.map((r) => ({ ...r, serverMaxCalories: r.maxCalories, maxCalories: kcalForDay(r.dayNumber) }));
     } catch (err) {
       console.warn('[FMD API]: Lấy rules FMD (Fallback):', err.message);
       return DEFAULT_FMD_RULES;
@@ -105,6 +133,37 @@ export const fmdApi = {
     } catch (err) {
       console.warn('[Notification API]: Lấy lịch sử thông báo:', err.message);
       return [];
+    }
+  },
+
+  // GET /api/notifications/user/{id}/unread-count
+  async getUnreadCount(userId = DEMO_USER.id) {
+    const effectiveUserId = getEffectiveUserId(userId);
+    try {
+      const res = await apiClient.get(`/api/notifications/user/${effectiveUserId}/unread-count`, getRequestConfig());
+      return res.data?.data?.unreadCount ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  // POST /api/notifications/{id}/read và /user/{id}/read-all
+  async markNotificationRead(notificationId) {
+    try {
+      await apiClient.post(`/api/notifications/${notificationId}/read`, {}, getRequestConfig());
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async markAllNotificationsRead(userId = DEMO_USER.id) {
+    const effectiveUserId = getEffectiveUserId(userId);
+    try {
+      await apiClient.post(`/api/notifications/user/${effectiveUserId}/read-all`, {}, getRequestConfig());
+      return true;
+    } catch {
+      return false;
     }
   },
 

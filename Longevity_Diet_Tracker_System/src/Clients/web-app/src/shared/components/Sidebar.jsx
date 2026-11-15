@@ -10,16 +10,20 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
+  LogOut,
 } from 'lucide-react';
-import { DEMO_USER } from '../services/apiClient';
+import { useCurrentUser } from '../services/userStore';
 
 export default function Sidebar({
   activeTab,
   onSelectTab,
   onBackToLanding,
+  onLogout,
   isCollapsed = false,
   onToggleCollapse,
 }) {
+  const user = useCurrentUser();
+
   const menuItems = [
     {
       id: 'overview',
@@ -398,11 +402,11 @@ export default function Sidebar({
         {isCollapsed ? (
           <div
             className="relative cursor-pointer group"
-            title={`${DEMO_USER.name} (${DEMO_USER.tier})`}
+            title={`${user.name} (${user.tier})`}
           >
             <img
-              src={DEMO_USER.avatar}
-              alt={DEMO_USER.name}
+              src={user.avatar}
+              alt={user.name}
               className="
                 h-10 w-10 rounded-full
                 border-2 border-[#DCEBDA]
@@ -433,8 +437,8 @@ export default function Sidebar({
           >
             <div className="relative shrink-0">
               <img
-                src={DEMO_USER.avatar}
-                alt={DEMO_USER.name}
+                src={user.avatar}
+                alt={user.name}
                 className="
                   h-9 w-9 rounded-full
                   border-2 border-[#DCEBDA]
@@ -459,7 +463,7 @@ export default function Sidebar({
                   font-bold text-[#24352B]
                 "
               >
-                {DEMO_USER.name}
+                {user.name}
               </p>
 
               <p
@@ -468,9 +472,21 @@ export default function Sidebar({
                   font-medium text-[#718675]
                 "
               >
-                {DEMO_USER.tier}
+                {user.tier}
               </p>
             </div>
+
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                title="Đăng xuất"
+                aria-label="Đăng xuất"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[#718675] transition-colors hover:bg-[#EEF4EE] hover:text-[#B3402F]"
+              >
+                <LogOut size={16} />
+              </button>
+            )}
           </div>
         )}
       </div>

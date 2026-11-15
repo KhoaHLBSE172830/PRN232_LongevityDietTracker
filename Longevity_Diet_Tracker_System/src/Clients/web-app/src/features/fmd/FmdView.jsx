@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentUser } from '../../shared/services/userStore';
 import { Leaf, ShieldAlert, Mail, CheckCircle2, RefreshCw, Bell } from 'lucide-react';
-import { fmdApi, DEFAULT_FMD_RULES } from './fmdApi';
+import { fmdApi, DEFAULT_FMD_RULES, kcalForDay } from './fmdApi';
+import { Banner } from '../../shared/components/ui';
 import { DEMO_USER } from '../../shared/services/apiClient';
 
 export default function FmdView() {
@@ -13,16 +15,20 @@ export default function FmdView() {
     nutritionistAdviceAlertsEnabled: true,
   });
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [errorMessage, setErrorMessage] = useState('');
   const [bannerMessage, setBannerMessage] = useState('');
 
   const loadFmdData = async () => {
-    const [cycleData, rulesData, notifData, prefData] = await Promise.all([
-      fmdApi.getActiveCycle(DEMO_USER.id),
+    const [cycleData, rulesData, notifData, prefData, historyData] = await Promise.all([
+      fmdApi.getActiveCycle(getCurrentUser().id),
       fmdApi.getRules(),
-      fmdApi.getUserNotifications(DEMO_USER.id),
-      fmdApi.getPreferences(DEMO_USER.id),
+      fmdApi.getUserNotifications(getCurrentUser().id),
+      fmdApi.getPreferences(getCurrentUser().id),
+      fmdApi.getHistory(getCurrentUser().id),
     ]);
-    if (cycleData) setActiveCycle(cycleData);
+    setActiveCycle(cycleData || null);
+    if (Array.isArray(historyData)) setHistory(historyData);
     if (Array.isArray(rulesData) && rulesData.length > 0) setRules(rulesData);
     if (Array.isArray(notifData)) setNotifications(notifData);
     if (prefData) setPreferences(prefData);
@@ -37,13 +43,13 @@ export default function FmdView() {
     setBannerMessage('');
     try {
       const created = await fmdApi.startCycle({
-        userId: DEMO_USER.id,
+        userId: getCurrentUser().id,
         startDate: new Date().toISOString(),
       });
       if (created) {
         setActiveCycle(created);
         setBannerMessage(
-          `Đã kích hoạt Chu kỳ FMD #${created.cycleNumber || 1} — Ngày hiện tại: Ngày ${created.currentDay || 1} (Định mức tối đa: ${created.targetCaloriesToday || 1100} kcal).`
+          `Đã kích hoạt Chu kỳ FMD #${created.cycleNumber || 1} — Ngày hiện tại: Ngày ${created.currentDay || 1} (Định mức tối đa: ${kcalForDay(created.currentDay || 1)} kcal).`
         );
       }
     } finally {
@@ -51,13 +57,30 @@ export default function FmdView() {
     }
   };
 
+  const handleCancelCycle = async () => {
+    if (!activeCycle || !window.confirm('Hủy chu kỳ FMD đang chạy?')) return;
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      await fmdApi.cancelCycle(activeCycle.id);
+      setBannerMessage('Đã hủy chu kỳ FMD.');
+      await loadFmdData();
+    } catch (err) {
+      setErrorMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const STATUS_LABEL = { 1: 'Đã lên kế hoạch', 2: 'Đang chạy', 3: 'Hoàn tất', 4: 'Đã hủy', Planned: 'Đã lên kế hoạch', Active: 'Đang chạy', Completed: 'Hoàn tất', Cancelled: 'Đã hủy' };
+
   const handleTogglePreference = async (key) => {
     const updated = {
       ...preferences,
       [key]: !preferences[key],
     };
     setPreferences(updated);
-    await fmdApi.updatePreferences(DEMO_USER.id, updated);
+    await fmdApi.updatePreferences(getCurrentUser().id, updated);
   };
 
   return (
@@ -75,7 +98,7 @@ export default function FmdView() {
               </span>
               {activeCycle && (
                 <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                  Đang chạy: Ngày {activeCycle.currentDay}/5 ({activeCycle.targetCaloriesToday || (activeCycle.currentDay === 1 ? 1100 : 725)} kcal)
+                  Đang chạy: Ngày {activeCycle.currentDay}/5 ({kcalForDay(activeCycle.currentDay)} kcal)
                 </span>
               )}
             </div>
@@ -85,15 +108,30 @@ export default function FmdView() {
           </div>
         </div>
 
+        {activeCycle && (
+          <button
+            onClick={handleCancelCycle}
+            disabled={loading}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all"
+          >
+            Hủy chu kỳ
+          </button>
+        )}
         <button
           onClick={handleStartCycle}
-          disabled={loading}
+          disabled={loading || !!activeCycle}
           className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-600/20 transition-all cursor-pointer"
         >
           <Leaf className="w-4 h-4 fill-white" />
           <span>{loading ? 'Đang kích hoạt...' : 'Bắt Đầu Chu Kỳ FMD 5 Ngày Mới'}</span>
         </button>
       </div>
+
+      {errorMessage && (
+        <div role="alert" className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">
+          {errorMessage}
+        </div>
+      )}
 
       {bannerMessage && (
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between">
@@ -107,6 +145,24 @@ export default function FmdView() {
         </div>
       )}
 
+      {history.length > 0 && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xs">
+          <h3 className="text-sm font-extrabold text-slate-800 mb-3">Lịch sử chu kỳ</h3>
+          <ul className="divide-y divide-slate-100">
+            {history.map((c) => (
+              <li key={c.id} className="py-2.5 flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-800">
+                  Chu kỳ #{c.cycleNumber} · bắt đầu {new Date(c.startDate).toLocaleDateString('vi-VN')}
+                </span>
+                <span className="text-slate-500 font-semibold">
+                  Ngày {c.currentDay}/5 · {STATUS_LABEL[c.status] || c.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* 5-Day Protocol Roadmap */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xs space-y-4">
         <div className="flex items-center justify-between">
@@ -117,6 +173,12 @@ export default function FmdView() {
             Tần suất: 1 chu kỳ mỗi 1 - 3 tháng
           </span>
         </div>
+
+        {rules.some((r) => r.serverMaxCalories != null && r.serverMaxCalories !== r.maxCalories) && (
+          <Banner tone="demo" className="mb-3">
+            Định mức kcal đang hiển thị theo thiết kế (1100/780/760/760/780). Máy chủ FMD vẫn dùng rule cũ, cảnh báo vượt kcal sẽ khớp sau khi rule được cập nhật.
+          </Banner>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {rules.map((r) => {
@@ -153,7 +215,7 @@ export default function FmdView() {
           </div>
           <h4 className="font-extrabold text-slate-800 text-sm">Kiểm Soát Calo Tự Động</h4>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Hệ thống tự động phát hiện nếu người dùng ghi nhận món ăn vượt quá định mức 1100/725 kcal trong ngày FMD và gửi thông báo nhắc nhở tức thì qua RabbitMQ & SMTP Mailpit.
+            Hệ thống tự động phát hiện nếu người dùng ghi nhận món ăn vượt quá định mức kcal của từng ngày FMD và gửi thông báo nhắc nhở tức thì qua RabbitMQ & SMTP Mailpit.
           </p>
           <div className="pt-2 border-t border-slate-100 text-[11px] font-semibold text-teal-700 flex items-center justify-between">
             <span className="flex items-center gap-1">

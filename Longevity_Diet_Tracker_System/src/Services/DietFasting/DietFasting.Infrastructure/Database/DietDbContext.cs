@@ -17,6 +17,7 @@ public class DietDbContext : DbContext
     public DbSet<FmdCycle> FmdCycles => Set<FmdCycle>();
     public DbSet<FmdRule> FmdRules => Set<FmdRule>();
     public DbSet<MealTemplate> MealTemplates => Set<MealTemplate>();
+    public DbSet<HabitLog> HabitLogs => Set<HabitLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

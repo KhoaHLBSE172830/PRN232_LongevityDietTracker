@@ -1,3 +1,4 @@
+using BuildingBlocks.Common.Exceptions;
 using BuildingBlocks.Common.Repositories;
 using BuildingBlocks.Messaging.Abstractions;
 using BuildingBlocks.Messaging.Events;
@@ -31,6 +32,16 @@ public class MealService : IMealService
         _eventBus = eventBus;
     }
 
+    /// <summary>Khoảng [bắt đầu, kết thúc) theo UTC của "ngày địa phương" chứa thời điểm loggedAt.</summary>
+    private static (DateTime StartUtc, DateTime EndUtc) LocalDayRange(DateTime loggedAt, int utcOffsetMinutes)
+    {
+        var offset = Math.Clamp(utcOffsetMinutes, -14 * 60, 14 * 60);
+        var utc = loggedAt.Kind == DateTimeKind.Local ? loggedAt.ToUniversalTime() : DateTime.SpecifyKind(loggedAt, DateTimeKind.Utc);
+        var localDate = utc.AddMinutes(offset).Date;
+        var startUtc = DateTime.SpecifyKind(localDate.AddMinutes(-offset), DateTimeKind.Utc);
+        return (startUtc, startUtc.AddDays(1));
+    }
+
     public async Task<MealLogResponseDto> LogMealAsync(CreateMealLogDto dto)
     {
         var mealLog = new MealLog(dto.UserId, dto.MealType, dto.LoggedAt, dto.IsHaraHachiBuCompliant, dto.SatietyPercentage)
@@ -58,11 +69,12 @@ public class MealService : IMealService
         var activeFmd = await _fmdRepository.GetActiveCycleAsync(dto.UserId);
         if (activeFmd != null)
         {
-            var dayCaloriesAlready = await _mealRepository.GetUserTotalCaloriesForDateAsync(dto.UserId, dto.LoggedAt.Date);
+            var (dayStart, dayEnd) = LocalDayRange(dto.LoggedAt, dto.UtcOffsetMinutes);
+            var dayCaloriesAlready = (await _mealRepository.GetUserMealsInRangeAsync(dto.UserId, dayStart, dayEnd)).Sum(m => m.TotalCalories);
             var projectedTotal = dayCaloriesAlready + mealLog.TotalCalories;
 
             var rule = await _fmdRuleRepository.GetRuleByDayAsync(activeFmd.CurrentDay);
-            var thresholdLimit = rule?.MaxCalories ?? (activeFmd.CurrentDay == 1 ? 1100 : 725);
+            var thresholdLimit = rule?.MaxCalories ?? FmdCycle.DefaultCaloriesForDay(activeFmd.CurrentDay);
 
             if (projectedTotal > thresholdLimit)
             {
@@ -89,9 +101,87 @@ public class MealService : IMealService
         return MapToDto(mealLog);
     }
 
-    public async Task<List<MealLogResponseDto>> GetUserMealsAsync(Guid userId, DateTime date)
+    private static MealFoodItem ToFoodItem(CreateFoodItemDto item) => new()
     {
-        var logs = await _mealRepository.GetUserMealsByDateAsync(userId, date);
+        ExternalFoodId = item.ExternalFoodId,
+        FoodName = item.FoodName,
+        ServingSize = item.ServingSize,
+        ServingUnit = item.ServingUnit,
+        Calories = item.Calories,
+        ProteinGrams = item.ProteinGrams,
+        CarbsGrams = item.CarbsGrams,
+        FatGrams = item.FatGrams,
+        FiberGrams = item.FiberGrams
+    };
+
+    private async Task<MealLog> GetOwnedMealAsync(Guid mealId, Guid requesterUserId, bool isAdmin)
+    {
+        var meal = await _mealRepository.GetWithItemsAsync(mealId) ?? throw new MealLogNotFoundException(mealId);
+        if (!isAdmin && meal.UserId != requesterUserId)
+            throw new ForbiddenException("Bạn chỉ được thao tác với bữa ăn của chính mình.");
+        return meal;
+    }
+
+    /// <summary>Tạo bữa ăn từ một mẫu (một dòng món đại diện cho cả mẫu, 1 phần).</summary>
+    public async Task<MealLogResponseDto> LogMealFromTemplateAsync(Guid userId, MealTemplateDto template, ApplyMealTemplateDto dto)
+    {
+        var item = new CreateFoodItemDto(
+            $"template-{template.Id}", template.Name, 1, "phần",
+            template.TotalCalories, template.TotalProteinGrams, template.TotalCarbsGrams, template.TotalFatGrams, template.TotalFiberGrams);
+        var create = new CreateMealLogDto(
+            userId, dto.MealType, dto.LoggedAt ?? DateTime.UtcNow, new List<CreateFoodItemDto> { item },
+            template.Description, template.IsHaraHachiBuOptimized, dto.SatietyPercentage, dto.UtcOffsetMinutes);
+        return await LogMealAsync(create);
+    }
+
+    public async Task<MealLogResponseDto> UpdateMealAsync(Guid mealId, Guid requesterUserId, bool isAdmin, UpdateMealLogDto dto)
+    {
+        if (dto.FoodItems == null || dto.FoodItems.Count == 0)
+            throw new BadRequestException("Bữa ăn phải có ít nhất một món.");
+
+        var meal = await GetOwnedMealAsync(mealId, requesterUserId, isAdmin);
+
+        meal.UpdateDetails(dto.MealType, dto.LoggedAt, dto.Notes, dto.IsHaraHachiBuCompliant, dto.SatietyPercentage);
+        meal.ReplaceFoodItems(dto.FoodItems.Select(ToFoodItem));
+
+        // Kiểm tra lại ngưỡng FMD của ngày (không tính chính bữa này theo số cũ).
+        meal.ClearThreshold();
+        var activeFmd = await _fmdRepository.GetActiveCycleAsync(meal.UserId);
+        if (activeFmd != null)
+        {
+            var (dayStart, dayEnd) = LocalDayRange(meal.LoggedAt, dto.UtcOffsetMinutes);
+            var sameDay = await _mealRepository.GetUserMealsInRangeAsync(meal.UserId, dayStart, dayEnd);
+            var projected = sameDay.Where(m => m.Id != meal.Id).Sum(m => m.TotalCalories) + meal.TotalCalories;
+            var rule = await _fmdRuleRepository.GetRuleByDayAsync(activeFmd.CurrentDay);
+            var limit = rule?.MaxCalories ?? FmdCycle.DefaultCaloriesForDay(activeFmd.CurrentDay);
+            if (projected > limit)
+            {
+                var reason = $"Day {activeFmd.CurrentDay} FMD Calorie Limit Exceeded! Projected: {projected:F0} kcal vs Threshold: {limit:F0} kcal.";
+                meal.MarkThresholdExceeded(reason);
+                if (_eventBus != null)
+                    await _eventBus.PublishAsync(new FmdCycleAlertIntegrationEvent(activeFmd.Id, activeFmd.UserId, activeFmd.CurrentDay, reason));
+            }
+        }
+
+        await _mealRepository.UpdateAsync(meal);
+        await _unitOfWork.SaveChangesAsync();
+        return MapToDto(meal);
+    }
+
+    public async Task DeleteMealAsync(Guid mealId, Guid requesterUserId, bool isAdmin)
+    {
+        var meal = await GetOwnedMealAsync(mealId, requesterUserId, isAdmin);
+        await _mealRepository.DeleteAsync(meal);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    public async Task<List<MealLogResponseDto>> GetUserMealsAsync(Guid userId, DateTime date, int utcOffsetMinutes = 0)
+    {
+        // "date" là ngày theo giờ địa phương của người dùng (yyyy-MM-dd, Kind=Unspecified). Npgsql chỉ nhận UTC,
+        // nên đổi mốc 00:00 địa phương về UTC rồi lấy khoảng 24 giờ.
+        var offset = Math.Clamp(utcOffsetMinutes, -14 * 60, 14 * 60);
+        var startUtc = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc).AddMinutes(-offset);
+        var logs = await _mealRepository.GetUserMealsInRangeAsync(userId, startUtc, startUtc.AddDays(1));
         return logs.Select(MapToDto).ToList();
     }
 
@@ -188,6 +278,62 @@ public class FastingService : IFastingService
         return session == null ? null : MapToDto(session);
     }
 
+    public async Task<FastingSessionResponseDto> PauseFastingAsync(Guid sessionId, Guid requesterUserId, CancellationToken cancellationToken = default)
+    {
+        var session = await GetOwnedSessionAsync(sessionId, requesterUserId);
+        session.Pause(DateTime.UtcNow);
+        await _fastingRepository.UpdateAsync(session);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapToDto(session);
+    }
+
+    public async Task<FastingSessionResponseDto> ResumeFastingAsync(Guid sessionId, Guid requesterUserId, CancellationToken cancellationToken = default)
+    {
+        var session = await GetOwnedSessionAsync(sessionId, requesterUserId);
+        session.Resume(DateTime.UtcNow);
+        await _fastingRepository.UpdateAsync(session);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapToDto(session);
+    }
+
+    public async Task<List<FastingSessionResponseDto>> GetHistoryAsync(Guid userId, int limit = 30, CancellationToken cancellationToken = default)
+    {
+        var sessions = await _fastingRepository.GetHistoryAsync(userId, Math.Clamp(limit, 1, 200));
+        return sessions.Select(MapToDto).ToList();
+    }
+
+    public async Task<FastingStatsDto> GetStatsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var completed = await _fastingRepository.GetCompletedSessionsAsync(userId);
+        var days = completed
+            .Where(s => s.ActualEndTimeUtc.HasValue)
+            .Select(s => DateOnly.FromDateTime(s.ActualEndTimeUtc!.Value.ToUniversalTime()))
+            .Distinct()
+            .OrderBy(d => d)
+            .ToList();
+
+        // Chuỗi dài nhất
+        int longest = 0, run = 0;
+        DateOnly? prev = null;
+        foreach (var d in days)
+        {
+            run = prev.HasValue && d == prev.Value.AddDays(1) ? run + 1 : 1;
+            longest = Math.Max(longest, run);
+            prev = d;
+        }
+
+        // Chuỗi hiện tại: còn hiệu lực nếu ngày gần nhất là hôm nay hoặc hôm qua.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var current = 0;
+        if (days.Count > 0 && days[^1] >= today.AddDays(-1))
+        {
+            current = 1;
+            for (var i = days.Count - 1; i > 0 && days[i - 1] == days[i].AddDays(-1); i--) current++;
+        }
+
+        return new FastingStatsDto(current, longest, completed.Count, Math.Round(completed.Sum(s => s.ActualFastedHours ?? 0), 2));
+    }
+
     private async Task<FastingSession> GetOwnedSessionAsync(Guid sessionId, Guid requesterUserId)
     {
         var session = await _fastingRepository.FindByIdAsync(sessionId)
@@ -210,7 +356,7 @@ public class FastingService : IFastingService
 
     private static FastingSessionResponseDto MapToDto(FastingSession s) => new(
         s.Id, s.UserId, s.FastingType, s.StartTimeUtc, s.TargetEndTimeUtc,
-        s.ActualEndTimeUtc, s.Status, s.ActualFastedHours, s.MoodNotes);
+        s.ActualEndTimeUtc, s.Status, s.ActualFastedHours, s.MoodNotes, s.IsPaused, s.PausedAtUtc);
 }
 
 public class FmdService : IFmdService
@@ -260,10 +406,38 @@ public class FmdService : IFmdService
         if (cycle == null) return null;
 
         var rule = await _fmdRuleRepository.GetRuleByDayAsync(cycle.CurrentDay);
-        var targetCal = rule?.MaxCalories ?? (cycle.CurrentDay == 1 ? 1100 : 725);
+        var targetCal = rule?.MaxCalories ?? FmdCycle.DefaultCaloriesForDay(cycle.CurrentDay);
 
         return new FmdCycleResponseDto(
             cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status, targetCal);
+    }
+
+    public async Task<List<FmdCycleResponseDto>> GetHistoryAsync(Guid userId)
+    {
+        var cycles = await _fmdRepository.WhereAsync(c => c.UserId == userId);
+        var rules = await _fmdRuleRepository.GetAllRulesAsync();
+        return cycles
+            .OrderByDescending(c => c.StartDate)
+            .Select(c => new FmdCycleResponseDto(
+                c.Id, c.UserId, c.CycleNumber, c.StartDate, c.EndDate, c.CurrentDay, c.Status,
+                rules.FirstOrDefault(r => r.DayNumber == c.CurrentDay)?.MaxCalories ?? FmdCycle.DefaultCaloriesForDay(c.CurrentDay)))
+            .ToList();
+    }
+
+    public async Task<FmdCycleResponseDto> CancelCycleAsync(Guid cycleId, Guid requesterUserId, bool isAdmin)
+    {
+        var cycle = await _fmdRepository.FindByIdAsync(cycleId) ?? throw new FmdCycleNotFoundException(cycleId);
+        if (!isAdmin && cycle.UserId != requesterUserId)
+            throw new ForbiddenException("Bạn chỉ được hủy chu kỳ FMD của chính mình.");
+
+        cycle.Cancel();
+        await _fmdRepository.UpdateAsync(cycle);
+        await _unitOfWork.SaveChangesAsync();
+
+        var rule = await _fmdRuleRepository.GetRuleByDayAsync(cycle.CurrentDay);
+        return new FmdCycleResponseDto(
+            cycle.Id, cycle.UserId, cycle.CycleNumber, cycle.StartDate, cycle.EndDate, cycle.CurrentDay, cycle.Status,
+            rule?.MaxCalories ?? FmdCycle.DefaultCaloriesForDay(cycle.CurrentDay));
     }
 
     public async Task<int> AdvanceActiveCyclesAsync(CancellationToken cancellationToken = default)
@@ -301,10 +475,10 @@ public class FmdRuleService : IFmdRuleService
             var defaultRules = new List<FmdRule>
             {
                 new(1, 1100, 11, 46, 43, "Ngày 1 (Khởi động): Chuyển đổi năng lượng tế bào (1100 kcal)"),
-                new(2, 725, 9, 44, 47, "Ngày 2: Đốt mỡ sâu & Kích hoạt tự thực bào Autophagy (725 kcal)"),
-                new(3, 725, 9, 44, 47, "Ngày 3: Thanh lọc tế bào lão hóa & Giảm chỉ số viêm (725 kcal)"),
-                new(4, 725, 9, 44, 47, "Ngày 4: Tái tạo hệ miễn dịch & Trẻ hóa sinh học (725 kcal)"),
-                new(5, 725, 9, 44, 47, "Ngày 5: Hoàn tất chu kỳ & Phục hồi tế bào gốc (725 kcal)")
+                new(2, 780, 9, 44, 47, "Ngày 2: Đốt mỡ sâu & Kích hoạt tự thực bào Autophagy (780 kcal)"),
+                new(3, 760, 9, 44, 47, "Ngày 3: Thanh lọc tế bào lão hóa & Giảm chỉ số viêm (760 kcal)"),
+                new(4, 760, 9, 44, 47, "Ngày 4: Tái tạo hệ miễn dịch & Trẻ hóa sinh học (760 kcal)"),
+                new(5, 780, 9, 44, 47, "Ngày 5: Hoàn tất chu kỳ & Phục hồi tế bào gốc (780 kcal)")
             };
             await _ruleRepository.CreateRangeAsync(defaultRules);
             await _unitOfWork.SaveChangesAsync();
@@ -391,5 +565,58 @@ public class MealTemplateService : IMealTemplateService
             template.Id, template.Name, template.Description, template.AssociatedFastingType, template.FmdDayNumber,
             template.TotalCalories, template.TotalProteinGrams, template.TotalCarbsGrams, template.TotalFatGrams, template.TotalFiberGrams,
             template.IsPlantSlantCompliant, template.IsHaraHachiBuOptimized, template.IsAdminTemplate, template.RecipeContentJson);
+    }
+}
+
+
+public class HabitService : IHabitService
+{
+    public const int WaterGoalMl = 2000;
+    public const int MovementGoalMinutes = 30;
+
+    private readonly IHabitLogRepository _habitRepository;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public HabitService(IHabitLogRepository habitRepository, IUnitOfWork unitOfWork)
+    {
+        _habitRepository = habitRepository;
+        _unitOfWork = unitOfWork;
+    }
+
+    private static HabitDayDto ToDto(DateOnly date, HabitLog? h) =>
+        new(date, h?.WaterMl ?? 0, h?.MovementMinutes ?? 0, WaterGoalMl, MovementGoalMinutes);
+
+    public async Task<HabitDayDto> GetDayAsync(Guid userId, DateOnly date)
+        => ToDto(date, await _habitRepository.GetByUserAndDateAsync(userId, date));
+
+    public async Task<HabitDayDto> SetDayAsync(Guid userId, DateOnly date, SetHabitDto dto)
+    {
+        var existing = await _habitRepository.GetByUserAndDateAsync(userId, date);
+        var log = existing ?? HabitLog.Create(userId, date);
+        log.Set(dto.WaterMl, dto.MovementMinutes);
+        if (existing == null) await _habitRepository.CreateAsync(log); else await _habitRepository.UpdateAsync(log);
+        await _unitOfWork.SaveChangesAsync();
+        return ToDto(date, log);
+    }
+
+    public async Task<HabitDayDto> AddToDayAsync(Guid userId, DateOnly date, AddHabitDto dto)
+    {
+        var existing = await _habitRepository.GetByUserAndDateAsync(userId, date);
+        var log = existing ?? HabitLog.Create(userId, date);
+        log.Add(dto.WaterMl, dto.MovementMinutes);
+        if (existing == null) await _habitRepository.CreateAsync(log); else await _habitRepository.UpdateAsync(log);
+        await _unitOfWork.SaveChangesAsync();
+        return ToDto(date, log);
+    }
+
+    public async Task<List<HabitDayDto>> GetRangeAsync(Guid userId, DateOnly from, DateOnly to)
+    {
+        if (to < from || to.DayNumber - from.DayNumber > 92)
+            throw new InvalidHabitLogException("Range must be 1 to 93 days.");
+        var logs = await _habitRepository.GetRangeAsync(userId, from, to);
+        var result = new List<HabitDayDto>();
+        for (var d = from; d <= to; d = d.AddDays(1))
+            result.Add(ToDto(d, logs.FirstOrDefault(x => x.LogDate == d)));
+        return result;
     }
 }

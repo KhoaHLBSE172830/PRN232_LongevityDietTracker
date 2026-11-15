@@ -17,6 +17,7 @@ public class NotificationLogConfiguration : IEntityTypeConfiguration<Notificatio
         builder.Property(n => n.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(n => n.EventId).HasMaxLength(150);
 
+        builder.Ignore(n => n.IsRead);
         builder.HasIndex(n => new { n.UserId, n.CreatedAt });
         // AGENT.md Warning 5: Fast index for Idempotency verification
         builder.HasIndex(n => n.EventId);

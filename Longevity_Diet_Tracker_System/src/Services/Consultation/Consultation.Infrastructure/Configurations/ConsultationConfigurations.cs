@@ -11,6 +11,9 @@ public class NutritionistProfileConfiguration : IEntityTypeConfiguration<Nutriti
         builder.ToTable("nutritionist_profiles");
         builder.HasKey(n => n.Id);
         builder.HasIndex(n => n.UserId).IsUnique();
+        builder.Property(n => n.Tags).HasMaxLength(200).IsRequired();
+        builder.Property(n => n.AvatarUrl).HasMaxLength(500);
+        builder.Ignore(n => n.TagList);
     }
 }
 

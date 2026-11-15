@@ -198,6 +198,14 @@ public class MealLogRepository : GenericRepository<MealLog>, IMealLogRepository
                            .ToListAsync();
     }
 
+    public async Task<List<MealLog>> GetUserMealsInRangeAsync(Guid userId, DateTime startUtc, DateTime endUtc)
+    {
+        return await _dbSet.Include(m => m.FoodItems)
+                           .Where(m => m.UserId == userId && m.LoggedAt >= startUtc && m.LoggedAt < endUtc)
+                           .OrderBy(m => m.LoggedAt)
+                           .ToListAsync();
+    }
+
     public async Task<double> GetUserTotalCaloriesForDateAsync(Guid userId, DateTime date)
     {
         var start = date.Date;
@@ -220,6 +228,14 @@ public class FastingSessionRepository : GenericRepository<FastingSession>, IFast
     public async Task<FastingSession?> GetActiveSessionAsync(Guid userId)
     {
         return await _dbSet.FirstOrDefaultAsync(s => s.UserId == userId && s.Status == FastingStatus.InProgress);
+    }
+
+    public async Task<List<FastingSession>> GetHistoryAsync(Guid userId, int limit)
+    {
+        return await _dbSet.Where(s => s.UserId == userId && s.Status != FastingStatus.InProgress)
+                           .OrderByDescending(s => s.StartTimeUtc)
+                           .Take(limit)
+                           .ToListAsync();
     }
 
     public async Task<List<FastingSession>> GetCompletedSessionsAsync(Guid userId)
@@ -277,3 +293,21 @@ public class MealTemplateRepository : GenericRepository<MealTemplate>, IMealTemp
     }
 }
 
+
+
+public class HabitLogRepository : GenericRepository<HabitLog>, IHabitLogRepository
+{
+    public HabitLogRepository(DietDbContext context) : base(context) { }
+
+    public async Task<HabitLog?> GetByUserAndDateAsync(Guid userId, DateOnly date)
+    {
+        return await _dbSet.FirstOrDefaultAsync(h => h.UserId == userId && h.LogDate == date);
+    }
+
+    public async Task<List<HabitLog>> GetRangeAsync(Guid userId, DateOnly from, DateOnly to)
+    {
+        return await _dbSet.Where(h => h.UserId == userId && h.LogDate >= from && h.LogDate <= to)
+                           .OrderBy(h => h.LogDate)
+                           .ToListAsync();
+    }
+}

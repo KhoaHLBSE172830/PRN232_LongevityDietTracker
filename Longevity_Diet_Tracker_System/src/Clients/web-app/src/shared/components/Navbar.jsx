@@ -1,19 +1,55 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Flame,
   CalendarDays,
   Plus,
   Globe,
   PanelLeftOpen,
+  Bell,
+  LogOut,
+  UserCircle2,
 } from 'lucide-react';
-import { DEMO_USER } from '../services/apiClient';
+import { useCurrentUser } from '../services/userStore';
+import { fmdApi } from '../../features/fmd/fmdApi';
+import { fastingApi } from '../../features/fasting/fastingApi';
 
 export default function Navbar({ 
   onOpenAddMeal, 
   onBackToLanding,
+  onLogout,
+  onNavigate,
   onToggleCollapse,
   isSidebarCollapsed = false,
 }) {
+  const user = useCurrentUser();
+  const [notifs, setNotifs] = useState([]);
+  const unread = notifs.filter((n) => n.isRead === false || (n.isRead === undefined && !n.readAtUtc)).length;
+  const [bellOpen, setBellOpen] = useState(false);
+  const [streak, setStreak] = useState(null);
+  const bellRef = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    fmdApi.getUserNotifications(user.id).then((d) => alive && Array.isArray(d) && setNotifs(d));
+    return () => {
+      alive = false;
+    };
+  }, [user.id]);
+
+  useEffect(() => {
+    let alive = true;
+    fastingApi.getStats().then((st) => alive && st && setStreak(st.currentStreakDays));
+    return () => {
+      alive = false;
+    };
+  }, [user.id]);
+
+  useEffect(() => {
+    const close = (e) => bellRef.current && !bellRef.current.contains(e.target) && setBellOpen(false);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
   const today = new Intl.DateTimeFormat('vi-VN', {
     weekday: 'long',
     day: 'numeric',
@@ -73,7 +109,7 @@ export default function Navbar({
               </p>
 
               <p className="text-xs font-bold text-[#76552E]">
-                {DEMO_USER.streakDays} ngày
+                {streak ?? user.streakDays} ngày
               </p>
             </div>
           </div>
@@ -99,6 +135,54 @@ export default function Navbar({
             <span className="sm:hidden">Thêm</span>
           </button>
 
+          {/* CHUÔNG THÔNG BÁO: huy hiệu = số thông báo chưa đọc (BE lưu readAtUtc) */}
+          <div className="relative" ref={bellRef}>
+            <button
+              type="button"
+              onClick={() => {
+                const opening = !bellOpen;
+                setBellOpen(opening);
+                if (opening && unread > 0) {
+                  // Mở chuông = đã xem: đánh dấu đã đọc trên máy chủ rồi cập nhật cục bộ.
+                  fmdApi.markAllNotificationsRead(user.id).then((ok) => {
+                    if (ok) setNotifs((list) => list.map((n) => ({ ...n, isRead: true })));
+                  });
+                }
+              }}
+              title="Thông báo"
+              aria-label="Thông báo"
+              className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-[#DCE6DC] bg-[#F8FAF8] text-[#55725A] transition-all hover:border-[#B7D2BA] hover:bg-white hover:text-[#28734D] active:scale-95"
+            >
+              <Bell size={18} strokeWidth={1.8} />
+              {unread > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#C2503A] px-1 text-[10px] font-bold text-white">
+                  {Math.min(unread, 9)}
+                  {unread > 9 ? '+' : ''}
+                </span>
+              )}
+            </button>
+            {bellOpen && (
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-[#E4EAE3] bg-white shadow-xl">
+                <p className="border-b border-[#EEF2EE] px-4 py-3 text-xs font-bold text-[#24352B]">Thông báo gần đây</p>
+                <ul className="max-h-72 overflow-y-auto">
+                  {notifs.length === 0 && <li className="px-4 py-6 text-center text-xs text-[#849087]">Chưa có thông báo.</li>}
+                  {notifs.slice(0, 8).map((x, i) => (
+                    <li key={x.id || i} className="border-b border-[#F3F6F3] px-4 py-3 last:border-0">
+                      <p className="text-xs font-semibold text-[#24352B]">{x.subject || 'Thông báo'}</p>
+                      {(x.sentAtUtc || x.createdAt) && <p className="mt-0.5 text-[10px] text-[#94A198]">{new Date(x.sentAtUtc || x.createdAt).toLocaleString('vi-VN')}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {onNavigate && (
+            <button type="button" onClick={() => onNavigate('profile')} title="Hồ sơ" aria-label="Hồ sơ" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#DCE6DC] bg-[#F8FAF8] text-[#55725A] transition-all hover:border-[#B7D2BA] hover:bg-white hover:text-[#28734D] active:scale-95">
+              <UserCircle2 size={18} strokeWidth={1.8} />
+            </button>
+          )}
+
           {/* RETURN TO LANDING */}
           <button
             type="button"
@@ -119,6 +203,12 @@ export default function Navbar({
           >
             <Globe size={18} strokeWidth={1.8} />
           </button>
+
+          {onLogout && (
+            <button type="button" onClick={onLogout} title="Đăng xuất" aria-label="Đăng xuất" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#DCE6DC] bg-[#F8FAF8] text-[#55725A] transition-all hover:border-[#B7D2BA] hover:bg-white hover:text-[#28734D] active:scale-95">
+              <LogOut size={18} strokeWidth={1.8} />
+            </button>
+          )}
 
         </div>
       </div>

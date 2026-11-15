@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentUser } from '../../shared/services/userStore';
 import { 
   ShieldCheck, 
   AlertCircle, 
@@ -18,8 +19,9 @@ import {
   MapPin 
 } from 'lucide-react';
 import AddMealModal from './AddMealModal';
-import { DEMO_USER } from '../../shared/services/apiClient';
-import { mealsApi } from './mealsApi';
+import { useCurrentUser, isDemoMode } from '../../shared/services/userStore';
+import { Banner } from '../../shared/components/ui';
+import { mealsApi, localDateKey } from './mealsApi';
 
 // Danh sách châm ngôn dinh dưỡng trường thọ
 const LONGEVITY_QUOTES = [
@@ -43,15 +45,31 @@ const LONGEVITY_QUOTES = [
 export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddModal, showToast }) {
   const [meals, setMeals] = useState([]);
   const [selectedMealType, setSelectedMealType] = useState(1);
+  const [editingMeal, setEditingMeal] = useState(null);
   const [quoteIdx, setQuoteIdx] = useState(0);
+  const user = useCurrentUser();
+  const [date, setDate] = useState(() => new Date());
+  const [templates, setTemplates] = useState([]);
+  const isToday = localDateKey(date) === localDateKey(new Date());
 
   useEffect(() => {
     loadMeals();
+  }, [date, user.id]);
+
+  useEffect(() => {
+    mealsApi.getTemplates().then(setTemplates);
   }, []);
+
+  const shiftDay = (delta) =>
+    setDate((d) => {
+      const n = new Date(d);
+      n.setDate(n.getDate() + delta);
+      return n;
+    });
 
   const loadMeals = async () => {
     try {
-      const data = await mealsApi.getUserMeals(DEMO_USER.id);
+      const data = await mealsApi.getUserMeals(user.id, date);
       setMeals(data);
     } catch (err) {
       console.error('[MealsView]:', err);
@@ -59,12 +77,45 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
   };
 
   const handleOpenAddForMeal = (type) => {
+    setEditingMeal(null);
     setSelectedMealType(type);
     onOpenAddModal();
   };
 
+  const handleEditMeal = (meal) => {
+    setEditingMeal(meal);
+    setSelectedMealType(meal.mealType);
+    onOpenAddModal();
+  };
+
+  const handleApplyTemplate = async (template, mealType) => {
+    try {
+      const created = await mealsApi.applyTemplate(template, { mealType, date });
+      if (created && localDateKey(new Date(created.loggedAt)) === localDateKey(date)) {
+        setMeals((prev) => [created, ...prev.filter((m) => m.id !== created.id)]);
+      } else {
+        await loadMeals();
+      }
+      showToast({ type: 'success', title: 'Đã thêm mẫu vào nhật ký', message: `${template.name} (${Math.round(template.totalCalories || 0)} kcal).` });
+    } catch (err) {
+      showToast({ type: 'error', title: 'Không thêm được mẫu', message: err.message });
+    }
+  };
+
+  const handleDeleteMeal = async (meal) => {
+    if (!window.confirm('Xóa bữa ăn này khỏi nhật ký?')) return;
+    try {
+      await mealsApi.deleteMeal(meal.id);
+      setMeals((prev) => prev.filter((m) => m.id !== meal.id));
+      showToast({ type: 'success', title: 'Đã xóa bữa ăn', message: `${meal.mealTypeName || 'Bữa ăn'} đã được xóa khỏi nhật ký.` });
+    } catch (err) {
+      showToast({ type: 'error', title: 'Không xóa được', message: err.message });
+    }
+  };
+
   const handleMealAdded = (newMeal) => {
-    const existingIdx = meals.findIndex(m => m.mealType === newMeal.mealType);
+    if (localDateKey(new Date(newMeal.loggedAt)) !== localDateKey(date)) return;
+    const existingIdx = meals.findIndex(m => m.id === newMeal.id);
     if (existingIdx >= 0) {
       const updated = [...meals];
       updated[existingIdx] = newMeal;
@@ -88,8 +139,8 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
   const totalFiber = meals.reduce((sum, m) => sum + (m.totalFiberGrams || 0), 0);
 
   // Tính toán Gauge 80% Hara Hachi Bu
-  const budget = DEMO_USER.caloricBudget;
-  const haraHachiBuLimit = DEMO_USER.haraHachiBuThreshold;
+  const budget = user.caloricBudget;
+  const haraHachiBuLimit = user.haraHachiBuThreshold;
   const calPercent = Math.min(Math.round((totalCal / budget) * 100), 100);
   const isOver80 = totalCal > haraHachiBuLimit;
 
@@ -108,6 +159,30 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
+      {isDemoMode() && (
+        <Banner tone="demo">Chế độ demo: bữa ăn được lưu cục bộ trên trình duyệt, không gửi lên máy chủ.</Banner>
+      )}
+
+      {/* CHỌN NGÀY */}
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3">
+        <button type="button" onClick={() => shiftDay(-1)} className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50">
+          ← Hôm trước
+        </button>
+        <div className="text-center">
+          <p className="text-sm font-extrabold capitalize text-slate-800">
+            {new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(date)}
+          </p>
+          {!isToday && (
+            <button type="button" onClick={() => setDate(new Date())} className="text-[11px] font-bold text-emerald-700 hover:underline">
+              Về hôm nay
+            </button>
+          )}
+        </div>
+        <button type="button" onClick={() => shiftDay(1)} disabled={isToday} className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+          Hôm sau →
+        </button>
+      </div>
+
       {/* 1. THƯỚC ĐO NO 80% HARA HACHI BU & CALORIC GAUGE */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs relative overflow-hidden">
         <div className={`absolute top-0 right-0 w-48 h-48 rounded-full blur-3xl opacity-20 -mr-16 -mt-16 pointer-events-none ${
@@ -297,13 +372,17 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {mealSlots.map((slot) => {
-            const logged = meals.find((m) => m.mealType === slot.type);
+          {mealSlots
+            .flatMap((slot) => {
+              const list = meals.filter((m) => m.mealType === slot.type);
+              return list.length ? list.map((logged) => ({ slot, logged })) : [{ slot, logged: null }];
+            })
+            .map(({ slot, logged }) => {
             const Icon = slot.icon;
 
             if (logged) {
               return (
-                <div key={slot.type} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
+                <div key={`${slot.type}-${logged.id}`} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2.5">
@@ -359,13 +438,21 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
                     <span className="text-[11px] text-slate-400 font-medium">
                       Đạm: {logged.totalProteinGrams}g • Xơ: {logged.totalFiberGrams}g
                     </span>
-                    <button
-                      onClick={() => handleOpenAddForMeal(slot.type)}
-                      className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Thêm món</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleDeleteMeal(logged)}
+                        className="text-[11px] font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        Xóa
+                      </button>
+                      <button
+                        onClick={() => handleEditMeal(logged)}
+                        className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Sửa / thêm món</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -393,11 +480,48 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
         </div>
       </div>
 
+      {/* MẪU BỮA ĂN (GET /api/mealtemplates) */}
+      {templates.length > 0 && (
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-5">
+          <h3 className="mb-3 text-sm font-extrabold text-slate-800">Mẫu bữa ăn gợi ý</h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {templates.slice(0, 6).map((t) => (
+              <div key={t.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                <p className="text-xs font-bold text-slate-800">{t.name}</p>
+                <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{t.description}</p>
+                <p className="mt-2 text-[11px] font-bold text-emerald-700">
+                  {Math.round(t.totalCalories || 0)} kcal • Đạm {Math.round(t.totalProteinGrams || 0)}g
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {[
+                    [1, 'Sáng'],
+                    [2, 'Trưa'],
+                    [3, 'Tối'],
+                    [4, 'Phụ'],
+                  ].map(([type, label]) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleApplyTemplate(t, type)}
+                      className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                    >
+                      + {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* MODAL THÊM MÓN ĂN */}
       <AddMealModal
         isOpen={isAddModalOpen}
         onClose={onCloseAddModal}
         defaultMealType={selectedMealType}
+        date={date}
+        editingMeal={editingMeal}
         onMealAdded={handleMealAdded}
       />
     </div>

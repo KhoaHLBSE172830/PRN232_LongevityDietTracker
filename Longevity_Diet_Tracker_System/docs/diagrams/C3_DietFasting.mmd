@@ -1,59 +1,87 @@
 %% [C3] Component Diagram – DietFasting Service & Consultation gRPC Integration
-%% Author: Dương Đình Khôi & Kiệt (Domain 1 & Domain 2 Boundary)
+%% Author: Dương Đình Khôi & Kiệt (Domain 1 & Domain 2 Boundary). Đối chiếu tên với code bởi Kiệt (16/11/2026).
 flowchart LR
     %% External Callers
     GW["YARP API Gateway (:5000 / :7159)<br/>[HTTP/REST Reverse Proxy]"]
-    CONSULT_SVC["Consultation Service (:5003)<br/>[gRPC Client - HTTP/2 Cleartext]"]
+    CONSULT_SVC["Consultation Service (:5003)<br/>[gRPC Client - DietFastingGrpcClient, HTTP/2 Cleartext]"]
+    JOB_SVC["Job Service (:5005)<br/>[Hangfire - recurring jobs]"]
+    NOTIF_SVC["Notification Service (:5004)<br/>[RabbitMQ Consumer - gửi email]"]
 
     %% DietFasting Service Boundaries
     subgraph DFS["Diet & Fasting Service (Dual Port: 5002 HTTP / 7002 gRPC)"]
         %% Presentation Layer
-        subgraph PRESENTATION["1. Presentation Layer"]
-            REST_CTRL["REST Controllers (:5002)<br/>- MealsController<br/>- FastingController<br/>- FmdController"]
-            GRPC_EP["DietFastingGrpcEndpoint (:7002)<br/>[gRPC Server Service]<br/>Implement GetUserHealthSummary"]
+        subgraph PRESENTATION["1. Presentation Layer (DietFasting.API)"]
+            REST_CTRL["REST Controllers (:5002, [Authorize] + JWT)<br/>- MealsController<br/>- FastingController (start/end/cancel/active)<br/>- FmdController<br/>- NutritionController<br/>- FmdRulesController (Admin)<br/>- MealTemplatesController"]
+            GRPC_EP["DietFastingGrpcService (:7002)<br/>[gRPC Server - DietFastingGrpcBase]<br/>GetUserFastingSummary / GetUserNutritionSummary / GetActiveFmdCycle<br/>Grpc:RequireAuth -> chỉ Nutritionist/Admin"]
         end
 
         %% Application Layer
-        subgraph APPLICATION["2. Application Layer"]
+        subgraph APPLICATION["2. Application Layer (DietFasting.Application)"]
             MEAL_SVC["IMealService / MealService"]
             FAST_SVC["IFastingService / FastingService"]
             FMD_SVC["IFmdService / FmdService"]
-            SUMMARY_SVC["IHealthSummaryQuery<br/>Aggregate Fasting, Macros, FMD Snapshot"]
+            FMDRULE_SVC["IFmdRuleService / FmdRuleService"]
+            TEMPLATE_SVC["IMealTemplateService / MealTemplateService"]
+            NUTRI_SVC["INutritionService<br/>[Tra cứu dinh dưỡng]"]
+            REMIND_SVC["IFastingReminderService / FastingReminderService<br/>IReminderDedupStore, IReliableEventBus"]
+            GRPC_PORT["IDietFastingGrpcClientService<br/>[Contract tổng hợp Fasting / Nutrition / FMD cho gRPC]"]
         end
 
         %% Infrastructure Layer
-        subgraph INFRASTRUCTURE["3. Infrastructure Layer"]
-            EF_CTX["DietDbContext<br/>[EF Core PostgreSQL - snake_case]"]
-            REDIS_CACHE["Redis Cache Provider<br/>StackExchange.Redis (:6379)<br/>Key: nutrition:food:*"]
-            REPOS["DietFasting Repositories<br/>- MealLogRepository<br/>- FastingSessionRepository<br/>- FmdCycleRepository"]
+        subgraph INFRASTRUCTURE["3. Infrastructure Layer (DietFasting.Infrastructure)"]
+            EF_CTX["DietDbContext<br/>[EF Core PostgreSQL - snake_case]<br/>Unique index: 1 phiên InProgress / user"]
+            REDIS_CACHE["RedisCacheService<br/>StackExchange.Redis (:6379)<br/>Key: nutrition:food:*"]
+            DEDUP["RedisReminderDedupStore<br/>[SET NX, key fasting:reminder:*]"]
+            REPOS["Repositories<br/>- MealLogRepository<br/>- FastingSessionRepository<br/>- FmdCycleRepository<br/>- FmdRuleRepository<br/>- MealTemplateRepository"]
+            GRPC_IMPL["DietFastingGrpcServer<br/>[triển khai IDietFastingGrpcClientService]"]
+            NUTRI_CLIENT["NutritionApiClient<br/>[HttpClient -> USDA FoodData Central]"]
+            BUS["RabbitMqEventBus<br/>[IReliableEventBus - publisher confirms]"]
+            CONSUMER["FastingScheduleTriggerConsumer<br/>[BackgroundService, queue diet_fasting_trigger_queue]"]
         end
 
         %% Domain Layer
         subgraph DOMAIN["4. Domain Layer (Rich Entities)"]
-        ENT_MEAL["MealLog & MealFoodItem"]
-        ENT_FAST["FastingSession"]
-        ENT_FMD["FmdCycle & FmdDailyLog"]
-    end
+            ENT_MEAL["MealLog & MealFoodItem"]
+            ENT_FAST["FastingSession"]
+            ENT_FMD["FmdCycle & FmdRule"]
+            ENT_TEMPLATE["MealTemplate"]
+        end
     end
 
     %% External Systems
     DB[("PostgreSQL (:5432)<br/>Database: diet_db")]
-    REDIS[("Redis Cache (:6379)<br/>Food Nutrition Cache")]
-    EXT_API["External Nutrition API<br/>[USDA / CalorieNinjas REST]"]
+    REDIS[("Redis Cache (:6379)<br/>Nutrition cache, reminder dedup")]
+    EXT_API["External Nutrition API<br/>[USDA FoodData Central REST]"]
+    MQ{{"RabbitMQ (:5672)<br/>Exchange: longevity_events_exchange"}}
 
     %% Connectors
     GW -- "REST API Calls (HTTP)" --> REST_CTRL
-    CONSULT_SVC -- "gRPC Call: GetUserHealthSummary<br/>(HTTP/2 cleartext port 7002)" --> GRPC_EP
+    CONSULT_SVC -- "gRPC Call (HTTP/2 cleartext port 7002)" --> GRPC_EP
 
-    REST_CTRL --> MEAL_SVC & FAST_SVC & FMD_SVC
-    GRPC_EP --> SUMMARY_SVC
+    REST_CTRL --> MEAL_SVC & FAST_SVC & FMD_SVC & FMDRULE_SVC & TEMPLATE_SVC & NUTRI_SVC
+    GRPC_EP --> GRPC_PORT
+    GRPC_IMPL -. "implements" .-> GRPC_PORT
 
-    SUMMARY_SVC --> REPOS
     MEAL_SVC --> REPOS
     FAST_SVC --> REPOS
     FMD_SVC --> REPOS
+    FMDRULE_SVC --> REPOS
+    TEMPLATE_SVC --> REPOS
+    GRPC_IMPL --> REPOS
+    REMIND_SVC --> REPOS
 
     REPOS --> DOMAIN
     REPOS --> EF_CTX --> DB
-    MEAL_SVC --> REDIS_CACHE --> REDIS
-    REDIS_CACHE -. "Cache Miss" .-> EXT_API
+    NUTRI_SVC --> REDIS_CACHE --> REDIS
+    REDIS_CACHE -. "Cache Miss" .-> NUTRI_CLIENT --> EXT_API
+    REMIND_SVC --> DEDUP --> REDIS
+
+    FAST_SVC --> BUS
+    MEAL_SVC --> BUS
+    REMIND_SVC --> BUS
+    BUS -- "fasting.started / fasting.completed / fmd.alert / notification.email" --> MQ
+    MQ -- "notification.email, fmd.alert" --> NOTIF_SVC
+    JOB_SVC -- "fasting.schedule.trigger" --> MQ
+    MQ -- "fasting.schedule.trigger" --> CONSUMER
+    CONSUMER --> REMIND_SVC
+    CONSUMER --> FMD_SVC

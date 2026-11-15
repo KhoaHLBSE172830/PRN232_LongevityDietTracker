@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IFmdCycleRepository, FmdCycleRepository>();
         services.AddScoped<IFmdRuleRepository, FmdRuleRepository>();
         services.AddScoped<IMealTemplateRepository, MealTemplateRepository>();
+        services.AddScoped<IHabitLogRepository, HabitLogRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Redis Cache

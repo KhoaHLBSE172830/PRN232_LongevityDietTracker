@@ -1,4 +1,12 @@
 import { apiClient, DEMO_USER, LONGEVITY_SUPERFOODS } from '../../shared/services/apiClient';
+import { getCurrentUser } from '../../shared/services/userStore';
+import { getSession } from '../../shared/services/session';
+
+/** yyyy-MM-dd theo giờ địa phương (toISOString() lệch ngày theo múi giờ). */
+export function localDateKey(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 let localMealsStorage = [
   {
@@ -45,18 +53,67 @@ let localMealsStorage = [
 
 export const mealsApi = {
   // Lấy danh sách bữa ăn của người dùng
-  async getUserMeals(userId = DEMO_USER.id, date = new Date()) {
+  async getUserMeals(userId = getCurrentUser().id, date = new Date()) {
+    const formattedDate = localDateKey(date);
     try {
-      const formattedDate = date.toISOString().split('T')[0];
-      const res = await apiClient.get(`/api/meals/user/${userId}?date=${formattedDate}`);
-      if (res.data?.data) {
+      const res = await apiClient.get(`/api/meals/user/${userId}?date=${formattedDate}&utcOffsetMinutes=${-new Date().getTimezoneOffset()}`);
+      if (Array.isArray(res.data?.data)) {
         return res.data.data;
       }
-      return localMealsStorage;
     } catch (err) {
       console.warn('[Meals API]: Đang sử dụng dữ liệu mẫu:', err.message);
-      return localMealsStorage;
     }
+    // Ngoại tuyến: chỉ trả các bữa cục bộ thuộc đúng ngày được chọn.
+    return localMealsStorage.filter((m) => localDateKey(new Date(m.loggedAt)) === formattedDate);
+  },
+
+  // Mẫu bữa ăn (GET /api/mealtemplates). Lỗi/ngoại tuyến => danh sách rỗng.
+  async getTemplates() {
+    try {
+      const res = await apiClient.get('/api/mealtemplates');
+      return Array.isArray(res.data?.data) ? res.data.data : [];
+    } catch (err) {
+      console.info('[Meals API]: Không tải được mẫu bữa ăn:', err.message);
+      return [];
+    }
+  },
+
+  // Áp dụng mẫu bữa ăn thành bữa thật (cần đăng nhập thật; chế độ demo thì ghi cục bộ từ dữ liệu mẫu).
+  async applyTemplate(template, { mealType, date = new Date() }) {
+    const loggedAt = new Date(date);
+    const now = new Date();
+    loggedAt.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    if (getSession()) {
+      try {
+        const res = await apiClient.post(`/api/mealtemplates/${template.id}/apply`, {
+          mealType,
+          loggedAt: loggedAt.toISOString(),
+          utcOffsetMinutes: -new Date().getTimezoneOffset(),
+        });
+        return res.data?.data;
+      } catch (err) {
+        throw new Error(err?.response?.data?.Message || err?.response?.data?.message || 'Không thêm được mẫu vào nhật ký.');
+      }
+    }
+    return this.logMeal({
+      userId: getCurrentUser().id,
+      mealType,
+      loggedAt: loggedAt.toISOString(),
+      notes: template.description,
+      foodItems: [
+        {
+          externalFoodId: `template-${template.id}`,
+          foodName: template.name,
+          servingSize: 1,
+          servingUnit: 'phần',
+          calories: template.totalCalories,
+          proteinGrams: template.totalProteinGrams,
+          carbsGrams: template.totalCarbsGrams,
+          fatGrams: template.totalFatGrams,
+          fiberGrams: template.totalFiberGrams,
+        },
+      ],
+    });
   },
 
   // Ghi nhận bữa ăn mới
@@ -89,6 +146,48 @@ export const mealsApi = {
 
     localMealsStorage.unshift(newMeal);
     return newMeal;
+  },
+
+  // Sửa bữa ăn. Đã đăng nhập: gọi máy chủ và ném lỗi nếu thất bại (không lưu giả cục bộ). Chưa đăng nhập: sửa bản cục bộ.
+  async updateMeal(mealId, payload) {
+    if (getSession()) {
+      try {
+        const res = await apiClient.put(`/api/meals/${mealId}`, payload);
+        return res.data?.data;
+      } catch (err) {
+        throw new Error(err?.response?.data?.Message || err?.response?.data?.message || 'Không sửa được bữa ăn trên máy chủ.');
+      }
+    }
+    const idx = localMealsStorage.findIndex((m) => m.id === mealId);
+    if (idx < 0) throw new Error('Không tìm thấy bữa ăn.');
+    const items = payload.foodItems;
+    const sum = (k) => items.reduce((a, f) => a + (f[k] || 0), 0);
+    localMealsStorage[idx] = {
+      ...localMealsStorage[idx],
+      mealType: payload.mealType,
+      satietyPercentage: payload.satietyPercentage ?? 80,
+      isHaraHachiBuCompliant: payload.isHaraHachiBuCompliant ?? true,
+      notes: payload.notes || '',
+      foodItems: items,
+      totalCalories: sum('calories'),
+      totalProteinGrams: sum('proteinGrams'),
+      totalCarbsGrams: sum('carbsGrams'),
+      totalFatGrams: sum('fatGrams'),
+      totalFiberGrams: sum('fiberGrams'),
+    };
+    return localMealsStorage[idx];
+  },
+
+  async deleteMeal(mealId) {
+    if (getSession()) {
+      try {
+        await apiClient.delete(`/api/meals/${mealId}`);
+        return;
+      } catch (err) {
+        throw new Error(err?.response?.data?.Message || err?.response?.data?.message || 'Không xóa được bữa ăn trên máy chủ.');
+      }
+    }
+    localMealsStorage = localMealsStorage.filter((m) => m.id !== mealId);
   },
 
   // Tra cứu thực phẩm USDA

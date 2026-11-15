@@ -1,48 +1,49 @@
 %% [C3] Component Diagram – Consultation Service (Onion Architecture)
-%% Author: Dương Đình Khôi (Domain 2: Consultation Service)
+%% Author: Dương Đình Khôi (Domain 2: Consultation Service). Đối chiếu tên với code bởi Kiệt (16/11/2026).
 flowchart LR
     %% External Actors & Gateways
     USER["Hội Viên (User / Patient)<br/>[Client Web & Mobile]"]
-    DOCTOR["Bác Sĩ Dinh Dưỡng (Nutritionist)<br/>[Client Web & Mobile]"]
+    DOCTOR["Bác Sĩ Dinh Dưỡng (Nutritionist) / Admin<br/>[Client Web & Mobile]"]
     GW["YARP API Gateway (:5000 / :7159)<br/>[Reverse Proxy & SSL Termination]"]
 
     %% External Microservices
-    GRPC_SERVER["Diet & Fasting Service (:7002)<br/>[gRPC Server - HTTP/2 Cleartext]<br/>GetUserHealthSummary(UserId)"]
+    GRPC_SERVER["Diet & Fasting Service (:7002)<br/>[gRPC Server - HTTP/2 Cleartext]<br/>DietFastingGrpcService<br/>GetUserFastingSummary / GetUserNutritionSummary / GetActiveFmdCycle"]
     MQ{{"RabbitMQ Broker (:5672)<br/>Exchange: longevity_events_exchange (Topic)<br/>RoutingKey: advice.sent, consultation.booked"}}
     NOTIF_SVC["Notification Service (:5004)<br/>[RabbitMQ Consumer - Gửi Email]"]
 
     %% 1. Presentation / API Layer
     subgraph API["1. Consultation.API (Presentation Layer - Port 5003)"]
-        CTRL["ConsultationsController<br/>[REST Controller with [Authorize]]<br/>GET /nutritionists<br/>POST /book<br/>GET /user/{id}<br/>GET /nutritionist/{id}<br/>GET /review-user/{userId}<br/>POST /advice"]
-        MW["ExceptionHandlingMiddleware<br/>[Global ProblemDetails & HTTP Status Handler]"]
+        CTRL["ConsultationsController<br/>[REST Controller, [Authorize] + JWT]<br/>GET /nutritionists, GET /nutritionists/{id} (công khai)<br/>POST /book<br/>GET /user/{userId}, GET /user/{userId}/advices<br/>GET /nutritionist/{id} (Nutritionist/Admin)<br/>POST /advice (Nutritionist/Admin)<br/>GET /review-user/{userId} (Nutritionist/Admin)"]
+        MW["ExceptionHandlingMiddleware<br/>[BuildingBlocks.Common: BaseHttpException -> mã HTTP 400/401/403/404/409/503]"]
     end
 
     %% 2. Application Layer
     subgraph APP["2. Consultation.Application (Use Cases & Contracts)"]
-        ISVC["IConsultationService<br/>[Application Service Interface]"]
-        SVC["ConsultationApplicationService<br/>[Application Coordinator]<br/>- Điều phối đặt lịch (kiểm tra UTC, bác sĩ verified)<br/>- Kê phiếu lời khuyên (ngừa duplicate 409)<br/>- Kiểm tra quyền truy vấn dữ liệu bệnh nhân"]
-        IGRPC["IDietFastingGrpcClient<br/>[gRPC Port Interface]"]
-        IPUB["IEventBusPublisher / RabbitMQ<br/>[Integration Event Publisher]"]
-        IREPOS["IConsultationRepositories<br/>- INutritionistProfileRepository<br/>- IConsultationSessionRepository<br/>- IAdviceNoteRepository"]
+        ISVC["IConsultationService<br/>[Application Service Interface]<br/>ConsultationCaller (UserId + IsAdmin từ JWT)"]
+        SVC["ConsultationService<br/>[Application Service]<br/>- Đặt lịch (bác sĩ phải verified)<br/>- Kê phiếu lời khuyên (409 nếu đã có phiếu; UserId, NutritionistId lấy từ phiên)<br/>- Phân quyền theo hồ sơ bác sĩ của người gọi<br/>- review-user chỉ khi có lịch với chính bác sĩ"]
+        IGRPC["IDietFastingGrpcClientService<br/>[gRPC Port Interface - BuildingBlocks.Grpc]"]
+        IPUB["IEventBus<br/>[Integration Event Port - BuildingBlocks.Messaging]"]
+        IREPOS["Repository Interfaces<br/>- INutritionistProfileRepository<br/>- IConsultationSessionRepository<br/>- IAdviceNoteRepository"]
         IUOW["IUnitOfWork<br/>[Atomic Commit]"]
     end
 
     %% 3. Infrastructure Layer
     subgraph INFRA["3. Consultation.Infrastructure (Adapters & Data Access)"]
-        GRPC_CLIENT["DietFastingGrpcClient<br/>[gRPC Client Adapter]<br/>Channel: http://localhost:7002 (HTTP/2)<br/>Không fake số liệu, rethrow 503 khi lỗi"]
-        PUB["RabbitMqEventPublisher<br/>[AMQP Publisher Adapter]<br/>Publish AdviceSentIntegrationEvent"]
-        REPOS_IMPL["ConsultationRepositories<br/>[EF Core Repositories - snake_case]"]
-        CTX["ConsultationDbContext<br/>[EF Core DbContext - PostgreSQL Npgsql]"]
+        GRPC_CLIENT["DietFastingGrpcClient<br/>[gRPC Client Adapter]<br/>GrpcSettings:DietFastingUrl = http://localhost:7002 (HTTP/2)<br/>Không bịa số liệu: lỗi gRPC -> ServiceUnavailableException (503)"]
+        PUB["RabbitMqConsultationPublisher<br/>[AMQP Publisher Adapter]<br/>AdviceSentIntegrationEvent -> advice.sent<br/>ConsultationBookedIntegrationEvent -> consultation.booked"]
+        REPOS_IMPL["NutritionistProfileRepository<br/>ConsultationSessionRepository<br/>AdviceNoteRepository<br/>[EF Core Repositories]"]
+        CTX["ConsultationDbContext<br/>[EF Core DbContext - PostgreSQL Npgsql, snake_case]"]
         UOW_IMPL["UnitOfWork<br/>[EF Core UoW Implementation]"]
+        SEED["ConsultationDbSeeder<br/>[Seed 3 hồ sơ bác sĩ khi khởi động]"]
     end
 
     %% 4. Domain Layer
     subgraph DOM["4. Consultation.Domain (Rich Domain Model & Invariants)"]
-        ENT_NUTRI["NutritionistProfile<br/>[Aggregate Root / Entity]<br/>+ Verify()<br/>+ Unverify()"]
-        ENT_SESS["ConsultationSession<br/>[Aggregate Root / Entity]<br/>+ Schedule(futureUtc, duration)<br/>+ Confirm()<br/>+ AttachAdvice()<br/>+ Cancel()"]
-        ENT_ADV["AdviceNote<br/>[Entity / Value Holder]<br/>+ Create(summary, dietary, fasting)"]
-        ENUM_STATUS["SessionStatus<br/>(Pending=1, Confirmed=2,<br/>Completed=3, Cancelled=4)"]
-        EXC["Domain & Application Exceptions<br/>(ValidationException 400,<br/>Unauthorized 401, Forbidden 403,<br/>NotFound 404, Conflict 409, ServiceUnavailable 503)"]
+        ENT_NUTRI["NutritionistProfile<br/>[Entity]<br/>+ Verify()"]
+        ENT_SESS["ConsultationSession<br/>[Aggregate Root / Entity]<br/>+ Schedule(userId, nutritionistId, scheduledAt, duration, notes)<br/>+ Confirm() / Complete() / Cancel(reason)<br/>+ AttachAdvice(advice)"]
+        ENT_ADV["AdviceNote<br/>[Entity]<br/>+ Create(sessionId, userId, nutritionistId, summary, dietary, fasting)"]
+        ENUM_STATUS["ConsultationStatus<br/>(Pending=1, Confirmed=2,<br/>Completed=3, Cancelled=4)"]
+        EXC["Domain Exceptions<br/>ConsultationNotFoundException, NutritionistNotFoundException (404)<br/>ConsultationConflictException (409), ConsultationBadRequestException (400)<br/>ConsultationForbiddenException (403), ServiceUnavailableException (503)"]
     end
 
     %% Outbound Database
@@ -56,6 +57,7 @@ flowchart LR
     SVC --> DOM
     SVC --> IREPOS --> REPOS_IMPL --> CTX --> DB
     SVC --> IUOW --> UOW_IMPL --> CTX
+    SEED --> CTX
     SVC --> IGRPC --> GRPC_CLIENT
     GRPC_CLIENT -- "Protobuf / HTTP/2 (:7002)" --> GRPC_SERVER
     SVC --> IPUB --> PUB -- "AMQP Publish" --> MQ --> NOTIF_SVC

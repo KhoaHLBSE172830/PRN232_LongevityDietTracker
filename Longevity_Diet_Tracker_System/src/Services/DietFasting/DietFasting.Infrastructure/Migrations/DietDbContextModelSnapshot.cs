@@ -53,6 +53,10 @@ namespace DietFasting.Infrastructure.Migrations
                         .HasColumnType("character varying(256)")
                         .HasColumnName("notification_email");
 
+                    b.Property<DateTime?>("PausedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paused_at_utc");
+
                     b.Property<DateTime>("StartTimeUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("start_time_utc");
@@ -66,6 +70,10 @@ namespace DietFasting.Infrastructure.Migrations
                     b.Property<DateTime>("TargetEndTimeUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("target_end_time_utc");
+
+                    b.Property<double>("TotalPausedSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("total_paused_seconds");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -198,10 +206,49 @@ namespace DietFasting.Infrastructure.Migrations
                     b.ToTable("fmd_rules", (string)null);
                 });
 
+            modelBuilder.Entity("DietFasting.Domain.Entities.HabitLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateOnly>("LogDate")
+                        .HasColumnType("date")
+                        .HasColumnName("log_date");
+
+                    b.Property<int>("MovementMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("movement_minutes");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<int>("WaterMl")
+                        .HasColumnType("integer")
+                        .HasColumnName("water_ml");
+
+                    b.HasKey("Id")
+                        .HasName("pk_habit_logs");
+
+                    b.HasIndex("UserId", "LogDate")
+                        .IsUnique()
+                        .HasDatabaseName("ix_habit_logs_user_id_log_date");
+
+                    b.ToTable("habit_logs", (string)null);
+                });
+
             modelBuilder.Entity("DietFasting.Domain.Entities.MealFoodItem", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
@@ -271,7 +318,6 @@ namespace DietFasting.Infrastructure.Migrations
             modelBuilder.Entity("DietFasting.Domain.Entities.MealLog", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 

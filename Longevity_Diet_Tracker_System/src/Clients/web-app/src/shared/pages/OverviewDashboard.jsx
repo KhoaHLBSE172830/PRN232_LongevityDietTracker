@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sparkles,
   UtensilsCrossed,
@@ -15,7 +15,10 @@ import {
   Sprout
 } from 'lucide-react';
 
-import { DEMO_USER } from '../services/apiClient';
+import { useCurrentUser, isDemoMode } from '../services/userStore';
+import { loadOverview } from '../services/overviewData';
+import { Banner } from '../components/ui';
+import { habitsApi, WATER_STEP_ML, MOVEMENT_STEP_MIN } from '../../features/habits/habitsApi';
 
 // ==========================================
 // COMPONENT: PILLAR CARD
@@ -148,6 +151,36 @@ export default function OverviewDashboard({
   onNavigate,
   onOpenAddMeal
 }) {
+  const user = useCurrentUser();
+  const demo = isDemoMode();
+  const [data, setData] = useState(null);
+  const [habit, setHabit] = useState(null);
+
+  useEffect(() => {
+    habitsApi.getDay().then(setHabit);
+  }, [user.id]);
+
+  const bumpHabit = async (delta) => {
+    const next = await habitsApi.add(delta);
+    setHabit(next);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    loadOverview(user).then((d) => alive && setData(d));
+    return () => {
+      alive = false;
+    };
+  }, [user.id]);
+
+  const n = data?.nutrition;
+  const f = data?.fasting;
+  const fm = data?.fmd;
+  const c = data?.consultation;
+  const pct = n && n.budget ? Math.round((n.calories / n.budget) * 100) : 0;
+  const hour = new Date().getHours();
+  const greeting = hour < 11 ? 'Chào buổi sáng,' : hour < 18 ? 'Chào buổi chiều,' : 'Chào buổi tối,';
+
   const tips = [
     {
       icon: CheckCircle2,
@@ -171,6 +204,11 @@ export default function OverviewDashboard({
 
   return (
     <div className="mx-auto w-full max-w-[1440px] space-y-7 pb-10 animate-fade-in">
+      {demo && (
+        <Banner tone="demo">
+          Chế độ demo: chưa đăng nhập bằng tài khoản thật, dữ liệu hiển thị là dữ liệu minh họa/cục bộ.
+        </Banner>
+      )}
 
       {/* =====================================
           1. WELCOME HERO
@@ -196,14 +234,14 @@ export default function OverviewDashboard({
 
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#E6D8A8]">
                 <Flame size={14} className="fill-[#E6B95B] text-[#E6B95B]" />
-                Chuỗi {DEMO_USER.streakDays} ngày liên tiếp
+                Chuỗi {data?.streak ?? user.streakDays} ngày liên tiếp{data?.streak == null ? ' (Minh họa)' : ''}
               </span>
             </div>
 
             {/* Heading */}
             <h2 className="text-[28px] font-extrabold leading-tight tracking-tight md:text-[36px]">
-              Chào buổi sáng,
-              <span className="text-[#A8D9B7]"> {DEMO_USER.name}!</span>
+              {greeting}
+              <span className="text-[#A8D9B7]"> {user.name}!</span>
             </h2>
 
             <p className="mt-3 max-w-[640px] text-[13px] leading-[1.9] text-[#D3E4D9] md:text-[14px]">
@@ -263,10 +301,10 @@ export default function OverviewDashboard({
             color="green"
             owner="Dinh Dưỡng"
             title="Dinh dưỡng hôm nay"
-            value="920"
-            unit="/ 1850 kcal"
-            status="● Mức năng lượng đã ghi nhận: 50%"
-            description="Chất xơ: 30.5g • Đạm: 44.5g"
+            value={n ? String(n.calories) : '—'}
+            unit={n ? `/ ${n.budget} kcal` : ''}
+            status={n ? `● Mức năng lượng đã ghi nhận: ${pct}%` : '● Đang tải...'}
+            description={n ? `Chất xơ: ${n.fiber}g • Đạm: ${n.protein}g • Carb: ${n.carbs}g • Béo: ${n.fat}g` : ''}
             link="Xem chi tiết bữa ăn"
           />
 
@@ -277,10 +315,16 @@ export default function OverviewDashboard({
             color="blue"
             owner="Nhịp Sinh Học"
             title="Nhịn ăn gián đoạn"
-            value="14g 15p"
-            unit="/ 16g"
-            status="● Đang theo dõi chu kỳ 16/8"
-            description="Thời gian kết thúc dự kiến: 12:00"
+            value={f?.state === 'active' ? f.elapsedText : f?.state === 'error' ? 'Không tải được' : 'Chưa bắt đầu'}
+            unit={f?.state === 'active' ? `/ ${f.targetHours}g` : ''}
+            status={
+              f?.state === 'active'
+                ? `● Đang theo dõi chu kỳ ${f.label}`
+                : f?.state === 'error'
+                ? '● Không kết nối được máy chủ nhịn ăn'
+                : '● Chưa có phiên nhịn ăn đang chạy'
+            }
+            description={f?.state === 'active' ? `Thời gian kết thúc dự kiến: ${f.endClock}` : 'Bắt đầu một phiên để theo dõi.'}
             link="Xem đồng hồ nhịn ăn"
           />
 
@@ -291,10 +335,10 @@ export default function OverviewDashboard({
             color="sage"
             owner="Thanh Lọc"
             title="Chu kỳ FMD 5 ngày"
-            value="Nghỉ giữa"
-            unit="chu kỳ"
-            status="● Chu kỳ gần nhất đã hoàn tất"
-            description="Lộ trình tiếp theo được theo dõi trong hệ thống."
+            value={fm?.state === 'active' ? `Ngày ${fm.day}/5` : 'Nghỉ giữa'}
+            unit={fm?.state === 'active' ? '' : 'chu kỳ'}
+            status={fm?.state === 'active' ? `● Chu kỳ #${fm.number || 1} đang chạy` : '● Chưa có chu kỳ đang chạy'}
+            description={fm?.state === 'active' ? `Định mức hôm nay: ${fm.kcal} kcal` : 'Bắt đầu chu kỳ mới trong mục FMD.'}
             link="Xem lộ trình 5 ngày"
           />
 
@@ -305,14 +349,43 @@ export default function OverviewDashboard({
             color="purple"
             owner="Chuyên Gia"
             title="Chuyên gia đồng hành"
-            value="BS. Trần Văn Hùng"
-            status="● Lịch hẹn: 15:00 Thứ Ba tới"
-            description="Lời khuyên: Bổ sung chất xơ từ thực phẩm thực vật."
+            value={c?.next?.who || (c?.state === 'guest' ? 'Chưa đăng nhập' : 'Chưa có lịch')}
+            status={c?.next ? `● Lịch hẹn: ${c.next.when}` : '● Chưa có lịch hẹn sắp tới'}
+            description={
+              c?.advice
+                ? `Lời khuyên: ${c.advice}`
+                : c?.state === 'guest'
+                ? 'Đăng nhập bằng tài khoản thật để xem lịch và lời khuyên.'
+                : 'Chưa có lời khuyên nào.'
+            }
             link="Xem thông tin tư vấn"
           />
 
         </div>
       </section>
+
+      {/* BỮA ĂN HÔM NAY */}
+      {n && n.meals.length > 0 && (
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-[16px] font-extrabold tracking-tight text-[#25342A]">Bữa ăn hôm nay</h3>
+            <button type="button" onClick={() => onNavigate('meals')} className="text-[11px] font-bold text-[#24734F]">
+              Xem tất cả
+            </button>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {n.meals.slice(0, 4).map((m) => (
+              <div key={m.id} className="rounded-[18px] border border-[#E7EDE8] bg-white p-4">
+                <p className="text-[12px] font-bold text-[#2B392F]">{m.mealTypeName || 'Bữa ăn'}</p>
+                <p className="mt-1 text-[20px] font-extrabold text-[#24734F]">
+                  {Math.round(m.totalCalories || 0)} <span className="text-[11px] font-medium text-[#94A198]">kcal</span>
+                </p>
+                <p className="mt-1 line-clamp-2 text-[11px] text-[#849087]">{m.notes || ''}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* =====================================
           3. WELLNESS TIPS
@@ -332,6 +405,65 @@ export default function OverviewDashboard({
             Những điều nhỏ tạo nên sự thay đổi tích cực lâu dài
           </p>
         </div>
+
+        {habit && (
+          <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {[
+              {
+                key: 'water',
+                title: 'Uống nước',
+                value: habit.waterMl,
+                goal: habit.waterGoalMl,
+                unit: 'ml',
+                step: WATER_STEP_ML,
+                up: { waterMl: WATER_STEP_ML },
+                down: { waterMl: -WATER_STEP_ML },
+                color: 'bg-[#4B9CD3]',
+                icon: Droplets,
+              },
+              {
+                key: 'move',
+                title: 'Vận động',
+                value: habit.movementMinutes,
+                goal: habit.movementGoalMinutes,
+                unit: 'phút',
+                step: MOVEMENT_STEP_MIN,
+                up: { movementMinutes: MOVEMENT_STEP_MIN },
+                down: { movementMinutes: -MOVEMENT_STEP_MIN },
+                color: 'bg-[#438477]',
+                icon: Heart,
+              },
+            ].map((h) => {
+              const Icon = h.icon;
+              const pct = Math.min(100, Math.round((h.value / h.goal) * 100));
+              return (
+                <div key={h.key} className="rounded-[20px] border border-[#E7EDE8] bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#EAF3F0] text-[#438477]">
+                        <Icon size={19} strokeWidth={1.8} />
+                      </div>
+                      <div>
+                        <p className="text-[12px] font-bold text-[#2B392F]">{h.title}</p>
+                        <p className="text-[11px] text-[#849087]">
+                          {h.value} / {h.goal} {h.unit}
+                          {habit.source === 'local' && ' · lưu cục bộ'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => bumpHabit(h.down)} aria-label={`Giảm ${h.title}`} className="h-8 w-8 rounded-lg border border-[#E1E8E2] text-[#55725A] hover:bg-[#F3F7F3]">−</button>
+                      <button type="button" onClick={() => bumpHabit(h.up)} aria-label={`Tăng ${h.title}`} className="h-8 rounded-lg bg-[#24734F] px-3 text-[11px] font-bold text-white hover:bg-[#1d5f40]">+{h.step}</button>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#EEF2EE]">
+                    <div className={`h-full rounded-full ${h.color} transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 

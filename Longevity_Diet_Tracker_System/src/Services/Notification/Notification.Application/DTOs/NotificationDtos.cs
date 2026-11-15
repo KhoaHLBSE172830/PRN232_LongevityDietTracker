@@ -21,7 +21,11 @@ public record NotificationLogResponse(
     DateTime? SentAtUtc,
     string? ErrorMessage,
     string? EventId,
-    DateTime? CreatedAt);
+    DateTime? CreatedAt,
+    DateTime? ReadAtUtc = null,
+    bool IsRead = false);
+
+public record UnreadCountDto(int UnreadCount);
 
 public record NotificationPreferenceDto(
     Guid UserId,

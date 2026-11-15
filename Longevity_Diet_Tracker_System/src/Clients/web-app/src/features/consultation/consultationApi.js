@@ -4,11 +4,12 @@ import { apiClient, DEMO_USER } from '../../shared/services/apiClient';
  * Consultation API (Khôi - Domain 2) — chỉ dùng trong thư mục features/consultation/.
  *
  * Quy tắc kiến trúc & xử lý lỗi:
- *  - Có access token hợp lệ -> gọi backend thật qua Gateway (:7159 hoặc :5003).
+ *  - Có access token hợp lệ -> gắn header Authorization khi gọi backend qua Gateway (:7159 hoặc :5003).
  *  - Sử dụng timeout 20000ms để tránh treo UI khi gRPC liên dịch vụ khởi động chậm.
  *  - KHÔNG nuốt lỗi HTTP (400/401/403/404/409/500/503) và KHÔNG trả "thành công giả".
- *  - Ném ConsultationApiError kèm thông điệp chi tiết từ server.
- *  - Khi không có token hoặc máy chủ offline: cho phép fallback danh sách hiển thị với nhãn mô phỏng.
+ *  - Mọi lỗi (kể cả lỗi mạng) được ném dưới dạng ConsultationApiError kèm thông điệp chi tiết;
+ *    giao diện quyết định hiển thị (banner lỗi, hoặc danh sách bác sĩ mẫu khi `err.network`).
+ *  - Đặt lịch / kê đơn luôn cần máy chủ: không có đường "mô phỏng thành công" vì không lưu được gì.
  */
 
 const TOKEN_KEY = 'accessToken';
@@ -24,6 +25,9 @@ export class ConsultationApiError extends Error {
     this.validationErrors = validationErrors;
   }
 }
+
+/** true nếu lỗi là do không kết nối được máy chủ (mất mạng, Gateway/Consultation tắt: 502/503/504). */
+export const isOfflineError = (err) => err instanceof ConsultationApiError && err.network;
 
 function decodeJwt(token) {
   try {
@@ -103,51 +107,54 @@ function toApiError(err) {
   );
 }
 
+/**
+ * Danh sách bác sĩ mẫu, CHỈ để hiển thị khi không kết nối được máy chủ (giao diện phải gắn nhãn "dữ liệu mẫu").
+ * Không dùng khi server trả lỗi HTTP khác.
+ */
+export const SAMPLE_NUTRITIONISTS = [
+  {
+    id: '11111111-1111-1111-1111-111111111111',
+    fullName: 'TS. BS Đặng Minh Tuấn',
+    certification: 'Board Certified in Longevity & Anti-Aging (ABAARM)',
+    specialization: 'Dinh Dưỡng Vùng Xanh & Tối Ưu Hóa Trao Đổi Chất',
+    bio: '15 năm nghiên cứu mô hình sống thọ Okinawa và Loma Linda. Cố vấn chế độ ăn thực vật giàu đạm đậu và quy tắc no 80% (Hara Hachi Bu).',
+    isVerified: true
+  },
+  {
+    id: '22222222-2222-2222-2222-222222222222',
+    fullName: 'ThS. BS Lê Thị Hoàng Oanh',
+    certification: 'Chuyên gia Dinh Dưỡng Lâm Sàng & Fasting Mimicking Diet',
+    specialization: 'Liệu Trình Nhịn Ăn Gián Đoạn (IF) & FMD 5 Ngày',
+    bio: 'Chuyên gia đồng hành cùng hàng ngàn khách hàng hoàn thành chu kỳ thanh lọc tái tạo tế bào (Autophagy) và tái thiết lập độ nhạy insulin.',
+    isVerified: true
+  },
+  {
+    id: '33333333-3333-3333-3333-333333333333',
+    fullName: 'BS. CKI Trần Thanh Tùng',
+    certification: 'Y Học Thể Thao & Dinh Dưỡng Trường Thọ',
+    specialization: 'Cân Bằng Đa Lượng (Macros) & Khối Cơ Sarcopenia',
+    bio: 'Tập trung xây dựng thực đơn cá nhân hóa kết hợp đạm thực vật sạch và bảo toàn khối cơ nạc khi thực hiện chu kỳ nhịn ăn.',
+    isVerified: true
+  }
+];
+
 export const consultationApi = {
-  // 1. Lấy danh sách chuyên gia dinh dưỡng được chứng nhận
+  // 1. Lấy danh sách chuyên gia dinh dưỡng được chứng nhận (công khai)
   async getNutritionists() {
     try {
       const res = await apiClient.get('/api/consultations/nutritionists', getRequestConfig());
       return res.data?.data || [];
     } catch (err) {
-      console.warn('[Consultation API]: Lấy danh sách chuyên gia từ server không thành công, dùng danh sách mẫu:', err.message);
-      return [
-        {
-          id: '11111111-1111-1111-1111-111111111111',
-          fullName: 'TS. BS Đặng Minh Tuấn',
-          certification: 'Board Certified in Longevity & Anti-Aging (ABAARM)',
-          specialization: 'Dinh Dưỡng Vùng Xanh & Tối Ưu Hóa Trao Đổi Chất',
-          bio: '15 năm nghiên cứu mô hình sống thọ Okinawa và Loma Linda. Cố vấn chế độ ăn thực vật giàu đạm đậu và quy tắc no 80% (Hara Hachi Bu).',
-          isVerified: true
-        },
-        {
-          id: '22222222-2222-2222-2222-222222222222',
-          fullName: 'ThS. BS Lê Thị Hoàng Oanh',
-          certification: 'Chuyên gia Dinh Dưỡng Lâm Sàng & Fasting Mimicking Diet',
-          specialization: 'Liệu Trình Nhịn Ăn Gián Đoạn (IF) & FMD 5 Ngày',
-          bio: 'Chuyên gia đồng hành cùng hàng ngàn khách hàng hoàn thành chu kỳ thanh lọc tái tạo tế bào (Autophagy) và tái thiết lập độ nhạy insulin.',
-          isVerified: true
-        },
-        {
-          id: '33333333-3333-3333-3333-333333333333',
-          fullName: 'BS. CKI Trần Thanh Tùng',
-          certification: 'Y Học Thể Thao & Dinh Dưỡng Trường Thọ',
-          specialization: 'Cân Bằng Đa Lượng (Macros) & Khối Cơ Sarcopenia',
-          bio: 'Tập trung xây dựng thực đơn cá nhân hóa kết hợp đạm thực vật sạch và bảo toàn khối cơ nạc khi thực hiện chu kỳ nhịn ăn.',
-          isVerified: true
-        }
-      ];
+      throw toApiError(err);
     }
   },
 
-  // 2. Hội viên đặt lịch hẹn tư vấn mới
+  // 2. Hội viên đặt lịch hẹn tư vấn mới. userId do server lấy từ JWT, giá trị gửi lên bị bỏ qua.
   async bookSession(payload) {
     const session = getConsultationAuthSession();
-    const effectiveUserId = session?.userId || payload?.userId || DEMO_USER.id;
-
     const body = {
-      userId: effectiveUserId,
-      nutritionistId: payload?.nutritionistId || '11111111-1111-1111-1111-111111111111',
+      userId: session?.userId || payload?.userId || DEMO_USER.id,
+      nutritionistId: payload?.nutritionistId,
       scheduledAtUtc: payload?.scheduledAtUtc || new Date(Date.now() + 86400000).toISOString(),
       notes: payload?.notes || 'Tư vấn phác đồ ăn thực vật và lịch nhịn ăn 16/8'
     };
@@ -156,23 +163,40 @@ export const consultationApi = {
       const res = await apiClient.post('/api/consultations/book', body, getRequestConfig());
       return res.data;
     } catch (err) {
-      // Nếu có lỗi HTTP thật từ server (400, 401, 403, 409, 500) -> ném lỗi để UI hiển thị thông báo
-      if (err.response) {
-        throw toApiError(err);
-      }
-      // Chỉ khi hoàn toàn không có mạng và không có phiên đăng nhập mới dùng offline fallback có gắn cờ rõ ràng
-      console.warn('[Consultation API]: Ngoại lệ mạng, dùng chế độ offline mô phỏng:', err.message);
-      return {
-        isSuccess: true,
-        isMock: true,
-        message: 'Đã tạo lịch hẹn tư vấn (Chế độ mô phỏng offline do chưa kết nối Gateway)',
-        data: {
-          id: 'mock-session-' + Date.now(),
-          ...body,
-          durationMinutes: 45,
-          status: 1
-        }
-      };
+      throw toApiError(err);
+    }
+  },
+
+  // 2b. Khung giờ trống của bác sĩ theo ngày (yyyy-MM-dd, giờ Việt Nam). Công khai.
+  async getAvailability(nutritionistId, dateKey) {
+    try {
+      const res = await apiClient.get(
+        `/api/consultations/nutritionists/${nutritionistId}/availability?date=${dateKey}`,
+        getRequestConfig()
+      );
+      return res.data?.data?.slots || [];
+    } catch (err) {
+      throw toApiError(err);
+    }
+  },
+
+  // 2c. Hủy lịch (hội viên chủ lịch / bác sĩ phụ trách / Admin)
+  async cancelSession(sessionId, reason) {
+    try {
+      const res = await apiClient.post(`/api/consultations/${sessionId}/cancel`, reason ? { reason } : {}, getRequestConfig());
+      return res.data?.data;
+    } catch (err) {
+      throw toApiError(err);
+    }
+  },
+
+  // 2d. Bác sĩ phụ trách / Admin xác nhận lịch đang chờ
+  async confirmSession(sessionId) {
+    try {
+      const res = await apiClient.post(`/api/consultations/${sessionId}/confirm`, {}, getRequestConfig());
+      return res.data?.data;
+    } catch (err) {
+      throw toApiError(err);
     }
   },
 
@@ -182,11 +206,7 @@ export const consultationApi = {
       const res = await apiClient.get(`/api/consultations/user/${userId}`, getRequestConfig());
       return res.data?.data || [];
     } catch (err) {
-      if (err.response && (err.response.status === 401 || err.response.status === 403)) {
-        throw toApiError(err);
-      }
-      console.warn('[Consultation API]: Lấy danh sách lịch hẹn hội viên:', err.message);
-      return [];
+      throw toApiError(err);
     }
   },
 
@@ -196,25 +216,17 @@ export const consultationApi = {
       const res = await apiClient.get(`/api/consultations/user/${userId}/advices`, getRequestConfig());
       return res.data?.data || [];
     } catch (err) {
-      if (err.response && (err.response.status === 401 || err.response.status === 403)) {
-        throw toApiError(err);
-      }
-      console.warn('[Consultation API]: Lấy phiếu lời khuyên:', err.message);
-      return [];
+      throw toApiError(err);
     }
   },
 
-  // 5. Bác sĩ xem danh sách bệnh nhân đặt lịch
-  async getNutritionistSessions(nutritionistId = '11111111-1111-1111-1111-111111111111') {
+  // 5. Bác sĩ xem danh sách bệnh nhân đặt lịch (chỉ của chính bác sĩ; Admin xem được mọi bác sĩ)
+  async getNutritionistSessions(nutritionistId) {
     try {
       const res = await apiClient.get(`/api/consultations/nutritionist/${nutritionistId}`, getRequestConfig());
       return res.data?.data || [];
     } catch (err) {
-      if (err.response && (err.response.status === 401 || err.response.status === 403)) {
-        throw toApiError(err);
-      }
-      console.warn('[Consultation API]: Lấy lịch khám của bác sĩ:', err.message);
-      return [];
+      throw toApiError(err);
     }
   },
 
@@ -224,7 +236,7 @@ export const consultationApi = {
       const res = await apiClient.get(`/api/consultations/review-user/${userId}`, getRequestConfig());
       return res.data?.data;
     } catch (err) {
-      // Tuyệt đối không giả mạo số liệu sức khỏe 24 fasts / 384 hours / 1850 kcal
+      // Tuyệt đối không giả mạo số liệu sức khỏe
       throw toApiError(err);
     }
   },
@@ -235,7 +247,7 @@ export const consultationApi = {
       const res = await apiClient.post('/api/consultations/advice', payload, getRequestConfig());
       return res.data;
     } catch (err) {
-      // Tuyệt đối không nuốt lỗi 409 Conflict hoặc 500 khi gửi trùng phiếu
+      // Không nuốt lỗi 403/409/500 khi gửi phiếu
       throw toApiError(err);
     }
   }

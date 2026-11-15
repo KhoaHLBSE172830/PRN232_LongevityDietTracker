@@ -33,7 +33,7 @@ public class AuthService : IAuthService
         if (existing != null)
             throw new EmailAlreadyExistsException(request.Email);
 
-        var user = new User(request.Email.ToLowerInvariant(), request.FullName, request.Role)
+        var user = new User(request.Email.ToLowerInvariant(), request.FullName, Domain.Enums.UserRole.User)
         {
             PasswordHash = HashPassword(request.Password)
         };
@@ -175,7 +175,24 @@ public class UserService : IUserService
             profile?.CurrentWeightKg,
             profile?.TargetWeightKg,
             profile?.DietaryPreference,
-            profile?.HealthGoals);
+            profile?.HealthGoals,
+            profile?.DailyCalorieTarget,
+            profile?.ProteinPercent,
+            profile?.CarbsPercent,
+            profile?.FatPercent,
+            profile?.PreferredFastingType,
+            profile?.WaterReminderEnabled,
+            profile?.EveningReminderEnabled);
+    }
+
+    public async Task SetRoleAsync(Guid userId, Domain.Enums.UserRole role)
+    {
+        var user = await _userRepository.GetWithProfileAsync(userId);
+        if (user == null)
+            throw new UserNotFoundException(userId.ToString());
+        user.Role = role;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _unitOfWork.SaveChangesAsync();
     }
 
     public async Task<UserProfileDto> UpdateProfileAsync(Guid userId, UserProfileDto profileDto)
@@ -199,6 +216,21 @@ public class UserService : IUserService
         user.Profile.TargetWeightKg = profileDto.TargetWeightKg;
         user.Profile.DietaryPreference = profileDto.DietaryPreference;
         user.Profile.HealthGoals = profileDto.HealthGoals;
+
+        if (profileDto.DailyCalorieTarget is < 800 or > 5000)
+            throw new BadRequestException("DailyCalorieTarget must be between 800 and 5000.");
+        var p = profileDto.ProteinPercent;
+        var c = profileDto.CarbsPercent;
+        var f = profileDto.FatPercent;
+        if ((p.HasValue || c.HasValue || f.HasValue) && (p ?? 0) + (c ?? 0) + (f ?? 0) != 100)
+            throw new BadRequestException("Protein/Carbs/Fat percentages must add up to 100.");
+        user.Profile.DailyCalorieTarget = profileDto.DailyCalorieTarget;
+        user.Profile.ProteinPercent = p;
+        user.Profile.CarbsPercent = c;
+        user.Profile.FatPercent = f;
+        user.Profile.PreferredFastingType = profileDto.PreferredFastingType;
+        user.Profile.WaterReminderEnabled = profileDto.WaterReminderEnabled ?? false;
+        user.Profile.EveningReminderEnabled = profileDto.EveningReminderEnabled ?? false;
         user.Profile.UpdatedAt = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync();

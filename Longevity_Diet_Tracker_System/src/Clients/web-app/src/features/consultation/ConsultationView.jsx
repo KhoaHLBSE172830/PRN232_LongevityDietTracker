@@ -4,7 +4,7 @@ import {
   Activity, Send, Clock, ShieldCheck, HeartPulse, User, 
   Award, ArrowRight, X, Sparkles, MessageSquareHeart, AlertCircle
 } from 'lucide-react';
-import { consultationApi, getConsultationAuthSession } from './consultationApi';
+import { consultationApi, getConsultationAuthSession, isOfflineError, SAMPLE_NUTRITIONISTS } from './consultationApi';
 import { DEMO_USER } from '../../shared/services/apiClient';
 
 export default function ConsultationView() {
@@ -21,12 +21,21 @@ export default function ConsultationView() {
   const [selectedNutritionist, setSelectedNutritionist] = useState(null);
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('09:00');
+  const [slots, setSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState('');
+  const [bookingSlot, setBookingSlot] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
 
   // gRPC Review Modal State
   const [isGrpcModalOpen, setIsGrpcModalOpen] = useState(false);
   const [grpcReviewData, setGrpcReviewData] = useState(null);
   const [grpcError, setGrpcError] = useState(null);
+  const [grpcLatencyMs, setGrpcLatencyMs] = useState(null);
+
+  // Lỗi tải dữ liệu (hiện banner thay vì chỉ ghi console) và cờ "đang dùng danh sách bác sĩ mẫu"
+  const [loadErrors, setLoadErrors] = useState([]);
+  const [offlineSample, setOfflineSample] = useState(false);
   const [loadingGrpc, setLoadingGrpc] = useState(false);
 
   // Advice Form State (Doctor Portal)
@@ -50,27 +59,68 @@ export default function ConsultationView() {
     loadData();
   }, []);
 
-  const loadData = async (targetDoctorId = selectedDoctorId) => {
-    setLoading(true);
-    try {
-      const authSession = getConsultationAuthSession();
-      const effectiveUserId = authSession?.userId || DEMO_USER.id;
+  // Thông tin đăng nhập (đọc từ JWT). Bác sĩ (Nutritionist) chỉ thao tác với hồ sơ của chính mình; Admin xem được mọi bác sĩ.
+  const authInfo = getConsultationAuthSession();
+  const isAdmin = authInfo?.role === 'Admin';
+  const isDoctor = isAdmin || authInfo?.role === 'Nutritionist';
+  const doctorOptions = isAdmin ? nutritionists : nutritionists.filter(n => n.userId === authInfo?.userId);
 
-      const [nutriList, userSessions, userAdvices, docSessions] = await Promise.all([
-        consultationApi.getNutritionists(),
-        consultationApi.getUserSessions(effectiveUserId),
-        consultationApi.getUserAdvices(effectiveUserId),
-        consultationApi.getNutritionistSessions(targetDoctorId)
-      ]);
-      setNutritionists(nutriList || []);
-      setSessions(userSessions || []);
-      setAdvices(userAdvices || []);
-      setDoctorSessions(docSessions || []);
-    } catch (err) {
-      console.error('[ConsultationView] loadData error:', err);
-    } finally {
-      setLoading(false);
+  // N1: mỗi phần dữ liệu được tải độc lập (Promise.allSettled): một phần lỗi không làm trống cả trang.
+  // API của bác sĩ chỉ được gọi khi người dùng là Nutritionist/Admin (hội viên sẽ bị 403).
+  const loadData = async () => {
+    setLoading(true);
+    const errors = [];
+    const session = getConsultationAuthSession();
+    const doctor = session?.role === 'Nutritionist' || session?.role === 'Admin';
+
+    const [nutriResult, sessionsResult, advicesResult] = await Promise.allSettled([
+      consultationApi.getNutritionists(),
+      session ? consultationApi.getUserSessions(session.userId) : Promise.resolve([]),
+      session ? consultationApi.getUserAdvices(session.userId) : Promise.resolve([])
+    ]);
+
+    let nutriList = [];
+    if (nutriResult.status === 'fulfilled') {
+      nutriList = nutriResult.value || [];
+      setOfflineSample(false);
+    } else if (isOfflineError(nutriResult.reason)) {
+      // Chỉ khi KHÔNG kết nối được máy chủ mới hiện danh sách mẫu, và phải gắn nhãn (N7)
+      nutriList = SAMPLE_NUTRITIONISTS;
+      setOfflineSample(true);
+    } else {
+      setOfflineSample(false);
+      errors.push(`Không tải được danh sách bác sĩ: ${nutriResult.reason?.message}`);
     }
+    setNutritionists(nutriList);
+
+    if (sessionsResult.status === 'fulfilled') setSessions(sessionsResult.value || []);
+    else { setSessions([]); errors.push(`Không tải được lịch hẹn của bạn: ${sessionsResult.reason?.message}`); }
+
+    if (advicesResult.status === 'fulfilled') setAdvices(advicesResult.value || []);
+    else { setAdvices([]); errors.push(`Không tải được phiếu lời khuyên: ${advicesResult.reason?.message}`); }
+
+    // Chỉ xác định hồ sơ bác sĩ khi danh sách bác sĩ lấy được từ server (danh sách mẫu không có userId thật)
+    if (session && doctor && nutriResult.status === 'fulfilled') {
+      const ownProfile = nutriList.find(n => n.userId === session.userId);
+      const targetId = session.role === 'Admin' ? (selectedDoctorId || nutriList[0]?.id) : ownProfile?.id;
+      if (!targetId) {
+        setDoctorSessions([]);
+        errors.push('Tài khoản bác sĩ của bạn chưa được gắn với hồ sơ bác sĩ dinh dưỡng nào.');
+      } else {
+        setSelectedDoctorId(targetId);
+        try {
+          setDoctorSessions((await consultationApi.getNutritionistSessions(targetId)) || []);
+        } catch (err) {
+          setDoctorSessions([]);
+          errors.push(`Không tải được danh sách hội viên của bác sĩ: ${err.message}`);
+        }
+      }
+    } else {
+      setDoctorSessions([]);
+    }
+
+    setLoadErrors(errors);
+    setLoading(false);
   };
 
   const handleDoctorChange = async (docId) => {
@@ -83,16 +133,69 @@ export default function ConsultationView() {
     }
   };
 
+  const tomorrowKey = () => new Date(Date.now() + 7 * 3600e3 + 86400000).toISOString().split('T')[0];
+
   const handleOpenBookModal = (nutri) => {
     setSelectedNutritionist(nutri);
+    setBookingDate(tomorrowKey());
+    setBookingSlot('');
     setIsBookModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isBookModalOpen || !selectedNutritionist || !bookingDate) return undefined;
+    let alive = true;
+    setSlotsLoading(true);
+    setSlotsError('');
+    setBookingSlot('');
+    consultationApi
+      .getAvailability(selectedNutritionist.id, bookingDate)
+      .then((list) => alive && setSlots(list))
+      .catch((err) => {
+        if (!alive) return;
+        setSlots([]);
+        setSlotsError(err.network ? 'Không kết nối được máy chủ để lấy khung giờ trống.' : err.message);
+      })
+      .finally(() => alive && setSlotsLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [isBookModalOpen, selectedNutritionist, bookingDate]);
+
+  const refreshAfterChange = async () => {
+    await loadData();
+  };
+
+  const handleCancelSession = async (sessionId) => {
+    if (!window.confirm('Bạn chắc chắn muốn hủy lịch hẹn này?')) return;
+    try {
+      await consultationApi.cancelSession(sessionId);
+      showToast('Đã hủy lịch tư vấn.', 'success');
+      await refreshAfterChange();
+    } catch (err) {
+      showToast(`❌ Không hủy được lịch: ${err.message}`, 'error');
+    }
+  };
+
+  const handleConfirmSession = async (sessionId) => {
+    try {
+      await consultationApi.confirmSession(sessionId);
+      showToast('Đã xác nhận lịch tư vấn.', 'success');
+      await refreshAfterChange();
+    } catch (err) {
+      showToast(`❌ Không xác nhận được lịch: ${err.message}`, 'error');
+    }
   };
 
   const handleConfirmBooking = async (e) => {
     e.preventDefault();
     if (!selectedNutritionist) return;
 
-    const scheduledDateTime = bookingDate ? `${bookingDate}T${bookingTime}:00Z` : new Date(Date.now() + 86400000).toISOString();
+    if (!bookingSlot) {
+      showToast('Vui lòng chọn một khung giờ trống.', 'error');
+      return;
+    }
+    const scheduledDateTime = bookingSlot;
     
     const authSession = getConsultationAuthSession();
     const effectiveUserId = authSession?.userId || DEMO_USER.id;
@@ -105,12 +208,8 @@ export default function ConsultationView() {
     };
 
     try {
-      const res = await consultationApi.bookSession(payload);
-      if (res?.isMock) {
-        showToast('⚠️ Máy chủ offline: Đã lưu lịch hẹn ở chế độ mô phỏng.', 'warning');
-      } else {
-        showToast(`🎉 Đã đặt lịch thành công với ${selectedNutritionist.fullName}!`, 'success');
-      }
+      await consultationApi.bookSession(payload);
+      showToast(`🎉 Đã đặt lịch thành công với ${selectedNutritionist.fullName}!`, 'success');
       setIsBookModalOpen(false);
       setBookingNotes('');
       await loadData();
@@ -124,9 +223,12 @@ export default function ConsultationView() {
     setLoadingGrpc(true);
     setGrpcError(null);
     setGrpcReviewData(null);
+    setGrpcLatencyMs(null);
     setIsGrpcModalOpen(true);
+    const startedAt = performance.now();
     try {
       const data = await consultationApi.reviewUserProgress(targetUserId);
+      setGrpcLatencyMs(Math.round(performance.now() - startedAt));
       setGrpcReviewData(data);
     } catch (err) {
       setGrpcError(err.message || 'Không thể đồng bộ dữ liệu qua gRPC cổng 7002.');
@@ -231,6 +333,7 @@ export default function ConsultationView() {
             <User className="w-4 h-4" />
             <span>Dành Cho Hội Viên</span>
           </button>
+          {isDoctor && (
           <button
             onClick={() => setActiveTab('nutritionist')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -242,12 +345,44 @@ export default function ConsultationView() {
             <Stethoscope className="w-4 h-4" />
             <span>Cổng Bác Sĩ & gRPC</span>
           </button>
+          )}
         </div>
       </div>
 
       {/* ========================================================================= */}
       {/* TAB 1: DÀNH CHO HỘI VIÊN (MEMBER PORTAL) */}
       {/* ========================================================================= */}
+      {/* Banner trạng thái tải dữ liệu (N1/N7): lỗi được hiển thị rõ thay vì chỉ ghi console */}
+      {!loading && (loadErrors.length > 0 || offlineSample || !authInfo) && (
+        <div className="space-y-2">
+          {offlineSample && (
+            <div role="alert" className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+              <span>
+                <strong>Không kết nối được máy chủ.</strong> Đang hiển thị danh sách bác sĩ mẫu (dữ liệu giả); chưa thể đặt lịch cho đến khi máy chủ hoạt động.
+              </span>
+            </div>
+          )}
+          {!authInfo && (
+            <div className="p-3 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-blue-600" />
+              <span>Bạn chưa đăng nhập. Hãy đăng nhập để đặt lịch và xem lịch hẹn, phiếu lời khuyên của mình.</span>
+            </div>
+          )}
+          {loadErrors.map((message, i) => (
+            <div key={i} role="alert" className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start justify-between gap-2">
+              <span className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
+                <span>{message}</span>
+              </span>
+              {i === 0 && (
+                <button onClick={() => loadData()} className="font-bold underline shrink-0">Thử lại</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {activeTab === 'member' && (
         <div className="space-y-8 animate-fade-in">
           {/* Section: Danh Sách Bác Sĩ */}
@@ -279,9 +414,13 @@ export default function ConsultationView() {
                   >
                     <div className="space-y-3">
                       <div className="flex items-start justify-between">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-100 to-indigo-50 text-purple-700 flex items-center justify-center font-black text-base shadow-xs">
-                          {nutri.fullName?.charAt(0) || 'B'}
-                        </div>
+                        {nutri.avatarUrl ? (
+                          <img src={nutri.avatarUrl} alt={nutri.fullName} className="w-12 h-12 rounded-2xl object-cover shadow-xs" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-100 to-indigo-50 text-purple-700 flex items-center justify-center font-black text-base shadow-xs">
+                            {nutri.fullName?.charAt(0) || 'B'}
+                          </div>
+                        )}
                         {nutri.isVerified && (
                           <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -303,6 +442,15 @@ export default function ConsultationView() {
                         <div className="font-medium text-slate-800">
                           <strong>Chuyên môn:</strong> {nutri.specialization}
                         </div>
+                        {Array.isArray(nutri.tags) && nutri.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {nutri.tags.map((t) => (
+                              <span key={t} className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100 text-[10px] font-bold">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <p className="line-clamp-2 text-slate-500 text-[11px] leading-relaxed">
                           {nutri.bio}
                         </p>
@@ -361,6 +509,14 @@ export default function ConsultationView() {
                           </p>
                         )}
                       </div>
+                      {(s.status === 1 || s.status === 2) && (
+                        <button
+                          onClick={() => handleCancelSession(s.id)}
+                          className="shrink-0 px-3 py-1.5 text-[11px] font-bold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-xl"
+                        >
+                          Hủy lịch
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -372,14 +528,14 @@ export default function ConsultationView() {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <FileText className="w-5 h-5 text-purple-600" />
-                  <h3 className="font-extrabold text-slate-900 text-sm">Phiếu Lời Khuyên (Advice Notes)</h3>
+                  <h3 className="font-extrabold text-slate-900 text-sm">Ghi Chú Tư Vấn</h3>
                 </div>
-                <span className="text-xs text-slate-400 font-bold">{advices.length} phiếu</span>
+                <span className="text-xs text-slate-400 font-bold">{advices.length} ghi chú</span>
               </div>
 
               {advices.length === 0 ? (
                 <div className="py-8 text-center text-slate-400 text-xs">
-                  Chưa có phiếu lời khuyên nào từ bác sĩ. Phiếu sẽ xuất hiện sau khi hoàn tất buổi tư vấn.
+                  Chưa có ghi chú tư vấn nào từ chuyên gia. Ghi chú sẽ xuất hiện sau khi hoàn tất buổi tư vấn.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -419,7 +575,7 @@ export default function ConsultationView() {
       {/* ========================================================================= */}
       {/* TAB 2: CỔNG BÁC SĨ & gRPC CLIENT (NUTRITIONIST PORTAL) */}
       {/* ========================================================================= */}
-      {activeTab === 'nutritionist' && (
+      {isDoctor && activeTab === 'nutritionist' && (
         <div className="space-y-6 animate-fade-in">
           {/* Banner Doctor Role */}
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -437,7 +593,7 @@ export default function ConsultationView() {
                 onChange={(e) => handleDoctorChange(e.target.value)}
                 className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-purple-600"
               >
-                {nutritionists.map(n => (
+                {doctorOptions.map(n => (
                   <option key={n.id} value={n.id}>{n.fullName}</option>
                 ))}
               </select>
@@ -456,7 +612,11 @@ export default function ConsultationView() {
               </span>
             </div>
 
-            {doctorSessions.length === 0 ? (
+            {!isDoctor ? (
+              <div className="py-8 text-center text-slate-500 text-xs">
+                Cổng này chỉ dành cho tài khoản <strong>Bác sĩ dinh dưỡng</strong> hoặc <strong>Admin</strong>. Hãy đăng nhập bằng tài khoản phù hợp để xem hội viên và kê đơn.
+              </div>
+            ) : doctorSessions.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs">
                 Chưa có hội viên nào đặt lịch với chuyên gia này. Hãy sang tab "Dành Cho Hội Viên" để đặt lịch thử nghiệm!
               </div>
@@ -481,6 +641,22 @@ export default function ConsultationView() {
 
                     {/* Doctor Action Buttons */}
                     <div className="flex items-center gap-2.5 shrink-0">
+                      {s.status === 1 && (
+                        <button
+                          onClick={() => handleConfirmSession(s.id)}
+                          className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition-all"
+                        >
+                          Xác nhận lịch
+                        </button>
+                      )}
+                      {(s.status === 1 || s.status === 2) && (
+                        <button
+                          onClick={() => handleCancelSession(s.id)}
+                          className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-all"
+                        >
+                          Hủy lịch
+                        </button>
+                      )}
                       <button
                         onClick={() => handleReviewGrpc(s.userId)}
                         className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 flex items-center gap-1.5 transition-all"
@@ -537,31 +713,48 @@ export default function ConsultationView() {
 
             <form onSubmit={handleConfirmBooking} className="space-y-3.5 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Chọn ngày tư vấn (Bắt buộc trong tương lai)</label>
+                <label className="font-bold text-slate-700 block mb-1">Chọn ngày tư vấn (giờ Việt Nam, trong tương lai)</label>
                 <input
                   type="date"
                   required
-                  defaultValue={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                  value={bookingDate}
+                  min={tomorrowKey()}
                   onChange={(e) => setBookingDate(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 font-medium"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Khung giờ</label>
-                <select
-                  value={bookingTime}
-                  onChange={(e) => setBookingTime(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-purple-600 font-medium bg-white"
-                >
-                  <option value="08:00">08:00 - 08:45 Sáng</option>
-                  <option value="09:00">09:00 - 09:45 Sáng</option>
-                  <option value="10:00">10:00 - 10:45 Sáng</option>
-                  <option value="14:00">14:00 - 14:45 Chiều</option>
-                  <option value="15:00">15:00 - 15:45 Chiều</option>
-                  <option value="16:00">16:00 - 16:45 Chiều</option>
-                </select>
+                <label className="font-bold text-slate-700 block mb-1">Khung giờ trống</label>
+                {slotsLoading ? (
+                  <p className="text-slate-500">Đang tải khung giờ...</p>
+                ) : slotsError ? (
+                  <p className="text-rose-700 font-semibold">{slotsError}</p>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {slots.map((sl) => {
+                      const label = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(sl.startUtc));
+                      const active = bookingSlot === sl.startUtc;
+                      return (
+                        <button
+                          key={sl.startUtc}
+                          type="button"
+                          disabled={!sl.isAvailable}
+                          onClick={() => setBookingSlot(sl.startUtc)}
+                          className={`py-2 rounded-xl border font-bold transition-all ${
+                            active
+                              ? 'bg-purple-600 text-white border-purple-600'
+                              : sl.isAvailable
+                              ? 'bg-white text-slate-700 border-slate-200 hover:border-purple-400'
+                              : 'bg-slate-100 text-slate-300 border-slate-100 line-through cursor-not-allowed'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -616,9 +809,11 @@ export default function ConsultationView() {
                 <Sparkles className="w-4 h-4 text-indigo-600" />
                 Dữ liệu được truy vấn Inter-Service đồng bộ qua giao thức HTTP/2 Protobuf
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-extrabold text-[10px]">
-                Độ trễ &lt; 5ms
-              </span>
+              {grpcLatencyMs != null && (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-extrabold text-[10px]" title="Đo thực tế từ trình duyệt, gồm Gateway, Consultation và gRPC">
+                  Phản hồi {grpcLatencyMs} ms
+                </span>
+              )}
             </div>
 
             {loadingGrpc ? (
@@ -646,7 +841,7 @@ export default function ConsultationView() {
                   </h4>
                   <div className="grid grid-cols-2 gap-2 text-slate-600">
                     <div>Trạng thái: <strong className="text-purple-700">{grpcReviewData.fastingSummary?.isCurrentlyFasting ? 'Đang Nhịn Ăn (Active)' : 'Đã dừng'}</strong></div>
-                    <div>Chế độ: <strong>{grpcReviewData.fastingSummary?.currentFastingType || '16/8'}</strong></div>
+                    <div>Chế độ: <strong>{grpcReviewData.fastingSummary?.isCurrentlyFasting ? (grpcReviewData.fastingSummary?.currentFastingType || '—') : 'Không có phiên đang chạy'}</strong></div>
                     <div>Tổng phiên hoàn thành: <strong>{grpcReviewData.fastingSummary?.totalCompletedFasts ?? 0} phiên</strong></div>
                     <div>Tổng giờ nhịn tích lũy: <strong>{grpcReviewData.fastingSummary?.totalFastedHours ?? 0} giờ</strong></div>
                   </div>
@@ -678,7 +873,7 @@ export default function ConsultationView() {
                         Bệnh nhân đang ở <strong>Chu kỳ {grpcReviewData.fmdCycleStatus?.cycleNumber ?? 1} - Ngày {grpcReviewData.fmdCycleStatus?.currentDay ?? 1}</strong> (Trạng thái: {grpcReviewData.fmdCycleStatus?.status || 'Active'}).
                       </p>
                       <div className="text-[10px] text-teal-700 italic">
-                        Chuyên gia lưu ý: Ngày thứ 3 là giai đoạn quá trình tự thực bào (Autophagy) đạt đỉnh, khuyến nghị calo hôm nay được kiểm soát dưới 725 kcal.
+                        Định mức calo hôm nay theo giao thức FMD: tối đa {(grpcReviewData.fmdCycleStatus?.currentDay ?? 1) === 1 ? 1100 : 725} kcal.
                       </div>
                     </>
                   ) : (

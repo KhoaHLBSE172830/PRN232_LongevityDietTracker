@@ -28,6 +28,7 @@ public static class ConsultationDbSeeder
                         Specialization = "Dinh Dưỡng Vùng Xanh & Tối Ưu Hóa Trao Đổi Chất",
                         Bio = "15 năm kinh nghiệm nghiên cứu mô hình sống thọ Okinawa và Loma Linda. Cố vấn chế độ ăn thực vật giàu đạm đậu và kiểm soát chỉ số no 80% (Hara Hachi Bu).",
                         IsVerified = true,
+                        Tags = "Blue Zones,Chuyển hóa,Hara Hachi Bu",
                         CreatedAt = DateTime.UtcNow
                     },
                     new()
@@ -39,6 +40,7 @@ public static class ConsultationDbSeeder
                         Specialization = "Liệu Trình Nhịn Ăn Gián Đoạn (IF) & FMD 5 Ngày",
                         Bio = "Chuyên gia đồng hành cùng hàng ngàn khách hàng hoàn thành chu kỳ thanh lọc tái tạo tế bào (Autophagy) và tái thiết lập độ nhạy insulin.",
                         IsVerified = true,
+                        Tags = "Fasting,FMD,Autophagy",
                         CreatedAt = DateTime.UtcNow
                     },
                     new()
@@ -50,6 +52,7 @@ public static class ConsultationDbSeeder
                         Specialization = "Cân Bằng Đa Lượng (Macros) & Khối Lượng Cơ Lão Hóa (Sarcopenia)",
                         Bio = "Tập trung xây dựng thực đơn cá nhân hóa kết hợp đạm thực vật sạch và bảo toàn khối cơ nạc khi thực hiện chu kỳ nhịn ăn.",
                         IsVerified = true,
+                        Tags = "Macros,Sarcopenia,Thể thao",
                         CreatedAt = DateTime.UtcNow
                     }
                 };

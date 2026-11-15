@@ -15,6 +15,10 @@ public class NotificationLog : BaseEntity
     public string? ErrorMessage { get; set; }
     public string? EventId { get; set; } // For Idempotency check (AGENT.md Warning 5)
 
+    /// <summary>Thời điểm người dùng đã đọc (null = chưa đọc). Dùng cho chuông thông báo trên giao diện.</summary>
+    public DateTime? ReadAtUtc { get; set; }
+    public bool IsRead => ReadAtUtc.HasValue;
+
     public NotificationLog() { }
 
     public NotificationLog(Guid userId, string recipient, string subject, string body, NotificationChannel channel = NotificationChannel.Email, string? eventId = null)
@@ -26,6 +30,13 @@ public class NotificationLog : BaseEntity
         Channel = channel;
         Status = NotificationStatus.Pending;
         EventId = eventId;
+    }
+
+    public void MarkAsRead()
+    {
+        if (IsRead) return;
+        ReadAtUtc = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     public void MarkAsSent()

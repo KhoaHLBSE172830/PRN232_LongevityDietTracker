@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LandingPage from './shared/pages/LandingPage';
 import OverviewDashboard from './shared/pages/OverviewDashboard';
 import Sidebar from './shared/components/Sidebar';
 import Navbar from './shared/components/Navbar';
 import Toast from './shared/components/Toast';
 import AuthModal from './features/auth/AuthModal';
+import { setCurrentUser, clearCurrentUser, hasStoredUser } from './shared/services/userStore';
 
 // Features
 import MealsView from './features/meals/MealsView';
@@ -15,7 +16,7 @@ import ProfileView from './features/auth/ProfileView';
 
 export default function App() {
   // 'landing' (Trang chủ công khai giới thiệu) | 'dashboard' (Không gian làm việc bên trong)
-  const [viewMode, setViewMode] = useState('landing');
+  const [viewMode, setViewMode] = useState(() => (hasStoredUser() ? 'dashboard' : 'landing'));
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'meals' | 'fasting' | 'fmd' | 'consultation' | 'profile'
   const [isAddMealModalOpen, setIsAddMealModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -50,14 +51,34 @@ export default function App() {
     setToast(null);
   };
 
-  const handleLoginSuccess = (user) => {
+  const handleLoginSuccess = (user, { demo = false } = {}) => {
+    setCurrentUser(user);
     setViewMode('dashboard');
+    setActiveTab('overview');
     showToast({
       type: 'success',
-      title: 'Đăng nhập thành công',
-      message: `Chào mừng ${user.name} trở lại với Longevity Diet Tracker!`,
+      title: demo ? 'Đã vào chế độ demo' : 'Đăng nhập thành công',
+      message: demo
+        ? 'Máy chủ xác thực chưa sẵn sàng nên dữ liệu hiển thị là dữ liệu minh họa.'
+        : `Chào mừng ${user.name} trở lại với Longevity Diet Tracker!`,
     });
   };
+
+  const handleLogout = () => {
+    clearCurrentUser();
+    setViewMode('landing');
+  };
+
+  // Token hết hạn/không hợp lệ (401) => quay về trang chủ và mở form đăng nhập.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      clearCurrentUser();
+      setViewMode('landing');
+      setIsAuthModalOpen(true);
+    };
+    window.addEventListener('auth:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
+  }, []);
 
   // 1. GIAO DIỆN TRANG CHỦ CÔNG KHAI (LANDING PAGE)
   if (viewMode === 'landing') {
@@ -87,6 +108,7 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         onBackToLanding={() => setViewMode('landing')}
+        onLogout={handleLogout}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
       />
@@ -99,6 +121,8 @@ export default function App() {
             setIsAddMealModalOpen(true);
           }}
           onBackToLanding={() => setViewMode('landing')}
+          onLogout={handleLogout}
+          onNavigate={setActiveTab}
           onToggleCollapse={handleToggleSidebar}
           isSidebarCollapsed={isSidebarCollapsed}
         />

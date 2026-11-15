@@ -25,37 +25,51 @@ namespace Identity.Infrastructure.Migrations
             modelBuilder.Entity("Identity.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<DateTime?>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
 
                     b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
 
                     b.Property<bool>("IsRevoked")
-                        .HasColumnType("boolean");
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_revoked");
+
+                    b.Property<string>("JwtId")
+                        .HasColumnType("text")
+                        .HasColumnName("jwt_id");
 
                     b.Property<string>("ReplacedByToken")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("replaced_by_token");
 
                     b.Property<string>("Token")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("token");
 
                     b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
 
-                    b.HasKey("Id");
+                    b.HasKey("Id")
+                        .HasName("pk_refresh_tokens");
 
                     b.HasIndex("Token")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("ix_refresh_tokens_token");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_refresh_tokens_user_id");
 
                     b.ToTable("refresh_tokens", (string)null);
                 });
@@ -63,44 +77,55 @@ namespace Identity.Infrastructure.Migrations
             modelBuilder.Entity("Identity.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<DateTime?>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
 
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("email");
 
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("full_name");
 
                     b.Property<string>("GoogleId")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("google_id");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
 
                     b.Property<bool>("IsEmailVerified")
-                        .HasColumnType("boolean");
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_email_verified");
 
                     b.Property<string>("PasswordHash")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
 
                     b.Property<int>("Role")
-                        .HasColumnType("integer");
+                        .HasColumnType("integer")
+                        .HasColumnName("role");
 
                     b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
-                    b.HasKey("Id");
+                    b.HasKey("Id")
+                        .HasName("pk_users");
 
                     b.HasIndex("Email")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_email");
 
                     b.ToTable("users", (string)null);
                 });
@@ -108,43 +133,83 @@ namespace Identity.Infrastructure.Migrations
             modelBuilder.Entity("Identity.Domain.Entities.UserProfile", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("CarbsPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("carbs_percent");
 
                     b.Property<DateTime?>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
 
                     b.Property<double?>("CurrentWeightKg")
-                        .HasColumnType("double precision");
+                        .HasColumnType("double precision")
+                        .HasColumnName("current_weight_kg");
+
+                    b.Property<int?>("DailyCalorieTarget")
+                        .HasColumnType("integer")
+                        .HasColumnName("daily_calorie_target");
 
                     b.Property<DateTime?>("DateOfBirth")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_of_birth");
 
                     b.Property<string>("DietaryPreference")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("dietary_preference");
+
+                    b.Property<bool>("EveningReminderEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("evening_reminder_enabled");
+
+                    b.Property<int?>("FatPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("fat_percent");
 
                     b.Property<string>("Gender")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("gender");
 
                     b.Property<string>("HealthGoals")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("health_goals");
 
                     b.Property<double?>("HeightCm")
-                        .HasColumnType("double precision");
+                        .HasColumnType("double precision")
+                        .HasColumnName("height_cm");
+
+                    b.Property<string>("PreferredFastingType")
+                        .HasColumnType("text")
+                        .HasColumnName("preferred_fasting_type");
+
+                    b.Property<int?>("ProteinPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("protein_percent");
 
                     b.Property<double?>("TargetWeightKg")
-                        .HasColumnType("double precision");
+                        .HasColumnType("double precision")
+                        .HasColumnName("target_weight_kg");
 
                     b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
 
-                    b.HasKey("Id");
+                    b.Property<bool>("WaterReminderEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("water_reminder_enabled");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_profiles");
 
                     b.HasIndex("UserId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("ix_user_profiles_user_id");
 
                     b.ToTable("user_profiles", (string)null);
                 });
@@ -155,7 +220,8 @@ namespace Identity.Infrastructure.Migrations
                         .WithMany("RefreshTokens")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .IsRequired()
+                        .HasConstraintName("fk_refresh_tokens_users_user_id");
 
                     b.Navigation("User");
                 });
@@ -166,7 +232,8 @@ namespace Identity.Infrastructure.Migrations
                         .WithOne("Profile")
                         .HasForeignKey("Identity.Domain.Entities.UserProfile", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .IsRequired()
+                        .HasConstraintName("fk_user_profiles_users_user_id");
 
                     b.Navigation("User");
                 });

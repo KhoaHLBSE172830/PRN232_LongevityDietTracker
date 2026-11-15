@@ -10,6 +10,7 @@ public class MealLogConfiguration : IEntityTypeConfiguration<MealLog>
     {
         builder.ToTable("meal_logs");
         builder.HasKey(m => m.Id);
+        builder.Property(m => m.Id).ValueGeneratedNever();
         builder.Property(m => m.MealType).HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(m => m.Notes).HasMaxLength(500);
         builder.Property(m => m.ThresholdViolationNotes).HasMaxLength(500);
@@ -29,6 +30,7 @@ public class MealFoodItemConfiguration : IEntityTypeConfiguration<MealFoodItem>
     {
         builder.ToTable("meal_food_items");
         builder.HasKey(f => f.Id);
+        builder.Property(f => f.Id).ValueGeneratedNever();
         builder.Property(f => f.ExternalFoodId).HasMaxLength(100).IsRequired();
         builder.Property(f => f.FoodName).HasMaxLength(255).IsRequired();
         builder.Property(f => f.ServingUnit).HasMaxLength(50).IsRequired();
@@ -92,5 +94,17 @@ public class MealTemplateConfiguration : IEntityTypeConfiguration<MealTemplate>
         builder.Property(t => t.Description).HasMaxLength(1000);
         builder.Property(t => t.AssociatedFastingType).HasConversion<string>().HasMaxLength(50);
         builder.Property(t => t.RecipeContentJson).HasColumnType("jsonb");
+    }
+}
+
+
+public class HabitLogConfiguration : IEntityTypeConfiguration<HabitLog>
+{
+    public void Configure(EntityTypeBuilder<HabitLog> builder)
+    {
+        builder.ToTable("habit_logs");
+        builder.HasKey(h => h.Id);
+        builder.Property(h => h.Id).ValueGeneratedNever();
+        builder.HasIndex(h => new { h.UserId, h.LogDate }).IsUnique();
     }
 }
