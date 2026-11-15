@@ -183,7 +183,7 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 - [x] **Hangfire thật**: Hangfire + PostgreSQL (`job_db`), dashboard `/hangfire`, 3 recurring job, endpoint trigger thủ công. *(đã kiểm chứng)*
 - [x] **Consumer nhắc nhở nhịn ăn**: `FastingScheduleTriggerConsumer` (queue `diet_fasting_trigger_queue`) + `FastingReminderService`; chống gửi trùng bằng Redis `SET NX` (TTL 48 giờ, có fallback in-memory); publish `notification.email`. *(đã kiểm chứng đến tận email trong Mailpit)*
 - [x] **Frontend Fasting**: Khung giao diện `src/features/fasting/FastingView.jsx` đã được dựng sẵn sang trọng.
-- [ ] **Nối API Frontend Fasting**: Mở file `src/features/fasting/fastingApi.js`, gọi `/api/fasting/start` và gắn state vào nút "Bắt đầu nhịn ăn".
+- [x] **Nối API Frontend Fasting** (chỉ sửa trong `features/fasting/`): `fastingApi.js` + `FastingView.jsx` gọi API thật (start / end / cancel / active), đồng hồ đếm ngược theo giờ server, chọn 12:12, 16:8, 18:6, 20:4, banner nhắc ≤ 15 phút và "đã đạt mục tiêu". *(đã kiểm chứng trên trình duyệt với backend thật, xem Mục 12)*
 - [ ] **Demo sáng thứ Hai**: Bấm bắt đầu nhịn ăn 16/8 $\rightarrow$ Đồng hồ chạy $\rightarrow$ Mở Swagger JobService bấm Trigger job kiểm tra nền.
 
 ### 4. TASKLIST TRẦN PHẠM KHÁNH QUỐC
@@ -805,7 +805,7 @@ Hint: Perhaps you meant to reference the column "f.Id".
 ### 11.2. Cổng 5432 / 6379 có thể bị chiếm bởi dự án khác
 `docker compose up -d` của dự án map `5432` (Postgres) và `6379` (Redis). Nếu máy đang chạy container của dự án khác dùng các cổng này thì compose sẽ lỗi hoặc backend nối nhầm DB. Cách kiểm tra: `docker ps` xem cổng đang bị chiếm; có thể đổi cổng host trong `docker-compose.yml` và truyền connection string bằng biến môi trường (`ConnectionStrings__DietDb`, `ConnectionStrings__Redis`, `ConnectionStrings__JobDb`).
 
-### 11.3. Những gì đã kiểm chứng thật (stack: Postgres + Redis + RabbitMQ + Mailpit)
+### 11.3. Những gì đã kiểm chứng thật (xem thêm Mục 12 cho frontend) (stack: Postgres + Redis + RabbitMQ + Mailpit)
 | # | Kịch bản | Kết quả |
 | :-: | :--- | :--- |
 | 1 | Fasting: start / active / end / cancel, 409, 400, 403, 404 | ✅ đúng mã trạng thái |
@@ -837,3 +837,42 @@ Hint: Perhaps you meant to reference the column "f.Id".
 4. Khi client đã gửi token: đặt `"Grpc": { "RequireAuth": true }` trong `appsettings` của `DietFasting.API`.
 
 **Hạn chế còn lại:** email chỉ có với phiên bắt đầu sau thay đổi này (phiên cũ dùng địa chỉ mặc định); `fasting.started/completed/meal.logged/fmd.alert` vẫn best-effort (chưa có Outbox); nếu email trong token thay đổi giữa chừng thì nhắc nhở vẫn dùng email lúc bắt đầu phiên.
+
+---
+
+## 12. FRONTEND FASTING (KIỆT) — CÁCH HOẠT ĐỘNG, KIỂM CHỨNG VÀ PHỤ THUỘC
+
+### 12.1. Chỉ sửa 2 file trong `src/features/fasting/`
+Không sửa `shared/`, `App.jsx` hay file của người khác nên **không conflict**. `FastingView` dùng banner lỗi nội bộ nên không cần `showToast` từ `App.jsx`.
+
+### 12.2. Quy tắc chọn nguồn dữ liệu (trong `fastingApi.js`)
+| Tình huống | Hành vi | Nhãn trên giao diện |
+| :--- | :--- | :--- |
+| Có JWT hợp lệ trong `localStorage.accessToken` | Gọi backend thật; `userId` lấy từ claim `nameid` của JWT | **Dữ liệu thật** (xanh) |
+| Không có token (hoặc không phải JWT, hoặc hết hạn) | Mô phỏng, lưu trong `localStorage` của trình duyệt | **Chế độ mô phỏng (chưa đăng nhập)** (vàng) |
+| Lỗi mạng, hoặc Gateway trả 502/503/504 (backend sập) | Rơi về mô phỏng | **Chế độ mô phỏng (mất kết nối)** (vàng) |
+| Lỗi HTTP thật (400/401/403/404/409) | **Hiện đúng thông báo của server**, không giả thành công | Banner đỏ |
+
+> Trước đây mọi lỗi đều bị nuốt và trả "thành công giả", nên người dùng không bao giờ thấy lỗi 409 hay 401.
+
+### 12.3. Đã kiểm chứng trên trình duyệt (backend thật: Postgres + Redis + RabbitMQ + DietFasting + Gateway)
+| # | Kịch bản | Kết quả |
+| :-: | :--- | :--- |
+| 1 | Chưa đăng nhập: bắt đầu 16:8, tải lại trang, kết thúc, bắt đầu 18:6 rồi hủy (có bước xác nhận) | ✅ nhãn mô phỏng đúng, đồng hồ chạy, tải lại vẫn còn phiên |
+| 2 | Có token: bắt đầu 20:4 | ✅ nhãn "Dữ liệu thật"; DB có dòng `InProgress`, 20 giờ, `notification_email` = email trong token |
+| 3 | Tải lại trang khi phiên đang chạy | ✅ đồng hồ tiếp tục đúng theo giờ server (còn 19:59:47) |
+| 4 | Kết thúc phiên kèm ghi chú | ✅ `status = Completed`, `mood_notes` được lưu, hiện tóm tắt giờ nhịn thực tế |
+| 5 | Tạo phiên bằng API khác rồi bấm Bắt đầu trên giao diện | ✅ banner đỏ hiện đúng thông điệp 409 của server |
+| 6 | Token sai chữ ký | ✅ "Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn." |
+| 7 | Tắt DietFasting (Gateway vẫn chạy) | ✅ chuyển sang "Chế độ mô phỏng (mất kết nối)" |
+
+**Lỗi tìm thấy khi kiểm chứng và đã sửa:** `apiClient` có timeout 5 giây; lần gọi đầu sau khi backend khởi động nguội chậm hơn nên bị nhầm là "mất kết nối". `fastingApi.js` nới timeout riêng cho Fasting lên 20 giây (không sửa `apiClient.js`). Khi backend sập, lần tải đầu có thể mất vài giây trước khi chuyển sang chế độ mô phỏng.
+
+### 12.4. Phụ thuộc vào phần của Khoa (chưa sửa, theo yêu cầu)
+Hiện frontend **chưa có cách đăng nhập thật**, nên để chạy ở chế độ "Dữ liệu thật" cần token trong `localStorage.accessToken`:
+- `AuthModal.jsx` `handleSubmit` bỏ qua kết quả đăng nhập và luôn vào bằng `DEMO_USER`.
+- `authApi.js` `login` nuốt lỗi và trả đăng nhập giả; chỉ lưu token khi gọi thành công.
+- `apiClient.js` chưa có interceptor gắn token (Fasting tự gắn header nên không bị ảnh hưởng, nhưng Meals, FMD, Consultation sẽ bị 401).
+- Identity chạy cổng 5251 trong khi Gateway route tới 5001; migration `InitialIdentityDb` lệch tên cột (Mục 11.1).
+
+**Cách demo "Dữ liệu thật" khi Khoa chưa xong:** đăng nhập qua Swagger của Identity (hoặc tạo JWT bằng secret trong `appsettings.json`), rồi trong Console trình duyệt chạy `localStorage.setItem('accessToken', '<JWT>')` và tải lại trang. Khi Khoa sửa đăng nhập thật, Fasting tự dùng token đó, không cần sửa gì thêm.
