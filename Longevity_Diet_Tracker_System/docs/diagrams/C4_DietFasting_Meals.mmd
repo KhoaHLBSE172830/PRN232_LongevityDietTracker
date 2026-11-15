@@ -1,0 +1,74 @@
+%% [C4] Code / Class Diagram – DietFasting.Domain (Part A: Meals & Blue Zones Templates)
+%% Author: Trần Phạm Khánh Quốc (Branch: quoc)
+classDiagram
+    class BaseEntity {
+        <<abstract>>
+        +Guid Id
+        +DateTime? CreatedAt
+        +DateTime? UpdatedAt
+    }
+
+    class MealLog {
+        +Guid UserId
+        +MealType MealType
+        +DateTime LoggedAt
+        +double TotalCalories
+        +double TotalProteinGrams
+        +double TotalCarbsGrams
+        +double TotalFatGrams
+        +double TotalFiberGrams
+        +string? Notes
+        +bool IsHaraHachiBuCompliant
+        +int SatietyPercentage
+        +bool ExceededThreshold
+        +string? ThresholdViolationNotes
+        +ICollection~MealFoodItem~ FoodItems
+        +AddFoodItem(MealFoodItem item) void
+        +RecalculateTotals() void
+        +MarkThresholdExceeded(string reason) void
+    }
+
+    class MealFoodItem {
+        +Guid MealLogId
+        +string ExternalFoodId
+        +string FoodName
+        +double ServingSize
+        +string ServingUnit
+        +double Calories
+        +double ProteinGrams
+        +double CarbsGrams
+        +double FatGrams
+        +double FiberGrams
+    }
+
+    class MealTemplate {
+        +string Name
+        +string Description
+        +FastingType AssociatedFastingType
+        +int? FmdDayNumber
+        +double TotalCalories
+        +double TotalProteinGrams
+        +double TotalCarbsGrams
+        +double TotalFatGrams
+        +double TotalFiberGrams
+        +bool IsPlantSlantCompliant
+        +bool IsHaraHachiBuOptimized
+        +bool IsAdminTemplate
+        +string? RecipeContentJson
+    }
+
+    class MealType {
+        <<enumeration>>
+        Breakfast = 1
+        Lunch = 2
+        Dinner = 3
+        Snack = 4
+    }
+
+    BaseEntity <|-- MealLog
+    BaseEntity <|-- MealFoodItem
+    BaseEntity <|-- MealTemplate
+    MealLog "1" *-- "*" MealFoodItem : contains (1-N Cascade)
+    MealLog --> MealType
+    note for MealLog "Quy tắc Blue Zones: Hara Hachi Bu (SatietyPercentage <= 80%)\nvà Plant Slant (theo dõi FiberGrams)."
+
