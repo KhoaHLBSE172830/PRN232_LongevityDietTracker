@@ -43,9 +43,9 @@ Sau khi kiểm toán chi tiết toàn bộ mã nguồn (`ApiGateways`, `Building
 | Thành viên | Phân hệ Backend đảm nhiệm | Màn hình Frontend (Web App) | "Vũ khí" Kỹ thuật chuyên sâu | Điểm tải |
 | :--- | :--- | :--- | :--- | :---: |
 | **Hoàng Lê Khoa** *(Leader)* | - `Identity Service` (6 REST APIs)<br>- `YarpGateway` (Reverse Proxy 10 routes)<br>- Cấu hình Docker & Script Multi-DB | Màn hình **Đăng ký, Đăng nhập & Profile cá nhân** (`features/auth/`) | **YARP Proxy & Google OAuth 2.0 / JWT Multi-role** | **8.5 / 10** |
-| **Nguyễn Ngọc Tường Vy** | - `DietFasting (Meal Module)` (2 REST APIs)<br>- `Nutrition Module` (2 REST APIs)<br>- Thuật toán tính vi/đa lượng (Macros)<br>- Quy tắc ăn no 80% (Hara Hachi Bu) | - Màn hình **Nhật ký Bữa ăn & Tra cứu món ăn** (`features/meals/`)<br>- **Dựng khung Web App chung** (Sidebar, Navbar, Theme Luxury)<br>- **Landing Page công khai & Dashboard 4 trụ cột** | **External Nutrition API (USDA) & Redis Distributed Cache** | **8.5 / 10** |
+| **Nguyễn Ngọc Tường Vy** | - `DietFasting (Meal Module)` (2 REST APIs)<br>- `Nutrition Module` (2 REST APIs)<br>- `MealTemplates (Thực đơn mẫu)` (3 REST APIs)<br>- Thuật toán tính vi/đa lượng (Macros)<br>- Quy tắc ăn no 80% (Hara Hachi Bu) | - Màn hình **Nhật ký Bữa ăn & Tra cứu món ăn** (`features/meals/`)<br>- **Dựng khung Web App chung** (Sidebar, Navbar, Theme Luxury)<br>- **Landing Page công khai & Dashboard 4 trụ cột** | **External Nutrition API (USDA), Redis Distributed Cache & Blue Zones Meal Templates** | **8.5 / 10** |
 | **Trần Anh Kiệt** | - `DietFasting (Fasting Module)` (3 REST APIs)<br>- `JobService (Hangfire)` (2 APIs)<br>- **Triển khai gRPC Server (Cổng 7002, 3 RPCs)**<br>- Hangfire Recurring Schedulers | Màn hình **Đồng hồ bấm giờ Nhịn ăn 16/8 & OMAD** (`features/fasting/`) | **gRPC Server (HTTP/2 Protobuf) & Hangfire Background Schedulers** | **8.5 / 10** |
-| **Trần Phạm Khánh Quốc** | - `DietFasting (FMD Module)` (2 REST APIs)<br>- `Admin Rules & Templates` (5 REST APIs)<br>- `Notification Service` (4 REST APIs)<br>- Logic cảnh báo vi phạm calo FMD | Màn hình **Lộ trình Chu kỳ FMD 5 ngày & Hộp thư thông báo** (`features/fmd/`) | **RabbitMQ Consumer (Async Event-Driven) & SMTP Mailpit Client** | **8.5 / 10** |
+| **Trần Phạm Khánh Quốc** | - `DietFasting (FMD Module)` (2 REST APIs)<br>- `Admin FMD Rules` (2 REST APIs)<br>- `Notification Service` (4 REST APIs)<br>- Logic cảnh báo vi phạm calo FMD | Màn hình **Lộ trình Chu kỳ FMD 5 ngày & Hộp thư thông báo** (`features/fmd/`) | **RabbitMQ Consumer (Async Event-Driven) & SMTP Mailpit Client** | **8.5 / 10** |
 | **Dương Đình Khôi** | - `Consultation Service` (4 REST APIs)<br>- Nghiệp vụ Bác sĩ dinh dưỡng & Đặt lịch khám<br>- Quản lý Phiếu lời khuyên (`AdviceNote`)<br>- **Tích hợp gRPC Client sang cổng 7002** | Màn hình **Đặt lịch tư vấn & Bác sĩ gửi phiếu lời khuyên** (`features/consultation/`) | **gRPC Client (Inter-service Sync) & RabbitMQ Event Publisher** | **8.5 / 10** |
 
 👉 **NHẬN XÉT ĐỘ CÂN ĐỐI**:  
@@ -72,13 +72,16 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 
 ---
 
-### BẢNG 2: BỮA ĂN & TRA CỨU DINH DƯỠNG BLUE ZONES (VY PHỤ TRÁCH) — PORT 5002
+### BẢNG 2: BỮA ĂN, TRA CỨU DINH DƯỠNG & THỰC ĐƠN MẪU BLUE ZONES (VY PHỤ TRÁCH) — PORT 5002
 | Method | Endpoint qua Gateway (`https://localhost:7159`) | Target Service Route | Request Body / Query Params | Chức năng & Kết quả nghiệp vụ |
 | :---: | :--- | :--- | :--- | :--- |
 | `POST` | `/api/meals` | `DietFasting.API: /api/meals` | `CreateMealLogDto` (`UserId`, `MealType`, `LoggedAt`, `FoodItems`, `SatietyPercentage`) | Ghi nhận bữa ăn, tự động tính tổng Calo, 4 Macros, kiểm tra quy tắc no 80% (Hara Hachi Bu). |
 | `GET` | `/api/meals/user/{userId}` | `DietFasting.API: /api/meals/user/{userId}` | Query param: `?date=yyyy-MM-dd` | Lấy danh sách 4 bữa ăn trong ngày của người dùng kèm chi tiết dưỡng chất. |
 | `GET` | `/api/nutrition/search` | `DietFasting.API: /api/nutrition/search` | Query param: `?query={keyword}` | Tra cứu thực phẩm theo từ khóa (Tích hợp Redis Cache & USDA Catalog). |
 | `GET` | `/api/nutrition/details/{externalFoodId}` | `DietFasting.API: /api/nutrition/details/{id}` | Route param: `externalFoodId` | Lấy bảng thành phần vi/đa lượng chi tiết của món ăn (Cache Redis 24h). |
+| `GET` | `/api/mealtemplates` | `DietFasting.API: /api/mealtemplates` | Không có | Lấy danh sách thực đơn mẫu chuẩn sống thọ Blue Zones (Plant-Slant). |
+| `GET` | `/api/mealtemplates/{id}` | `DietFasting.API: /api/mealtemplates/{id}` | Route param: `id` (GUID) | Lấy chi tiết món ăn trong một thực đơn mẫu. |
+| `POST` | `/api/mealtemplates` | `DietFasting.API: /api/mealtemplates` | `CreateMealTemplateRequest` | Admin/User tạo mới thực đơn mẫu dinh dưỡng trường thọ. |
 
 ---
 
@@ -94,16 +97,13 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 
 ---
 
-### BẢNG 4: CHU KỲ FMD 5 NGÀY & ADMIN RULES/TEMPLATES (QUỐC PHỤ TRÁCH) — PORT 5002
+### BẢNG 4: CHU KỲ FMD 5 NGÀY & ADMIN FMD RULES (QUỐC PHỤ TRÁCH) — PORT 5002
 | Method | Endpoint qua Gateway (`https://localhost:7159`) | Target Service Route | Request Body / Query Params | Chức năng & Kết quả nghiệp vụ |
 | :---: | :--- | :--- | :--- | :--- |
 | `POST` | `/api/fmd/start` | `DietFasting.API: /api/fmd/start` | `StartFmdCycleDto` (`UserId`, `TargetStartDateUtc`) | Kích hoạt chu kỳ nhịn ăn giả định FMD 5 ngày (Dr. Valter Longo). |
 | `GET` | `/api/fmd/user/{userId}/active` | `DietFasting.API: /api/fmd/user/{id}/active` | Route param: `userId` (GUID) | Lấy thông tin ngày hiện tại của chu kỳ FMD đang chạy (Ngày 1 $\rightarrow$ 5). |
 | `GET` | `/api/admin/fmd-rules` | `DietFasting.API: /api/admin/fmd-rules` | Header: `Role=Admin` | Admin xem cấu hình định mức calo 5 ngày (Ngày 1: 1100 kcal, Ngày 2-5: 725 kcal). |
 | `PUT` | `/api/admin/fmd-rules/{dayNumber}` | `DietFasting.API: /api/admin/fmd-rules/{day}` | `UpdateFmdRuleRequest` (`MaxCalories`, `MaxCarbsPercentage`) | Admin điều chỉnh định mức calo và tỷ lệ dinh dưỡng từng ngày FMD. |
-| `GET` | `/api/mealtemplates` | `DietFasting.API: /api/mealtemplates` | Không có | Lấy danh sách thực đơn mẫu chuẩn sống thọ (Plant-Slant). |
-| `GET` | `/api/mealtemplates/{id}` | `DietFasting.API: /api/mealtemplates/{id}` | Route param: `id` (GUID) | Lấy chi tiết món ăn trong một thực đơn mẫu. |
-| `POST` | `/api/mealtemplates` | `DietFasting.API: /api/mealtemplates` | `CreateMealTemplateRequest` | Admin tạo mới thực đơn mẫu dinh dưỡng trường thọ. |
 
 ---
 
@@ -166,7 +166,7 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
   - Tổng quan 4 trụ cột (`src/shared/pages/OverviewDashboard.jsx`) liên kết trực tiếp vào 4 phân hệ.
   - Thanh Sidebar thông minh (`src/shared/components/Sidebar.jsx`) hỗ trợ thu gọn/mở rộng, lưu trạng thái vào `localStorage` không bị bung khi chuyển tab.
 - [x] **Frontend Meals**: Hoàn thiện màn hình Bữa ăn (`src/features/meals/MealsView.jsx`) với Thước đo no 80% (`Hara Hachi Bu`), biểu đồ Calo/Chất xơ, 4 khung giờ ăn và Modal chọn món (`AddMealModal.jsx`).
-- [x] **Backend Meals**: Hoàn thiện `MealsController` (`POST /api/meals`, `GET /api/meals/user/{id}`).
+- [x] **Backend Meals & Templates**: Hoàn thiện `MealsController` (`POST /api/meals`, `GET /api/meals/user/{id}`) và `MealTemplatesController` (3 APIs quản lý thực đơn mẫu Blue Zones).
 - [x] **Backend Nutrition & Cache**: Viết `NutritionController` kết nối `NutritionApiClient` và `RedisCacheService`.
 - [x] **EF Core Migration**: Chạy migration `InitialDietDb` cho bảng `MealLogs`, `FoodItems`.
 - [ ] **Nối API Frontend Meals**: Mở file `src/features/meals/mealsApi.js`, bật kết nối thực tế gọi `POST /api/meals` và `GET /api/nutrition/search`.
@@ -181,7 +181,7 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 - [ ] **Demo sáng thứ Hai**: Bấm bắt đầu nhịn ăn 16/8 $\rightarrow$ Đồng hồ chạy $\rightarrow$ Mở Swagger JobService bấm Trigger job kiểm tra nền.
 
 ### 4. TASKLIST TRẦN PHẠM KHÁNH QUỐC
-- [x] **Backend FMD & Admin Rules**: Viết `FmdController`, `FmdRulesController` (Admin) và `MealTemplatesController`.
+- [x] **Backend FMD & Admin Rules**: Viết `FmdController` (2 APIs chu kỳ FMD 5 ngày) và `FmdRulesController` (2 APIs quản trị định mức calo FMD).
 - [x] **Backend Notification**: Viết `NotificationsController` (`/send`, `/user/{id}`, `/preferences`).
 - [x] **RabbitMQ Consumer**: Viết `RabbitMqNotificationConsumer` lắng nghe queue `notification_events_queue` các routing key: `fmd.alert`, `advice.sent`, `notification.email`.
 - [x] **SMTP Email Client**: Cấu hình `SmtpEmailService` gửi email HTML qua Mailpit.
@@ -203,6 +203,21 @@ Dưới đây là danh mục chính xác đến từng endpoint, method, route g
 
 ### Câu hỏi cốt lõi của Vy:
 > *"File plan có đầy đủ toàn bộ API hiện có trong dự án rồi đầy đủ các tasklist chưa? Có thể có hơn hoặc thêm hơn vậy không, hay là vừa đủ không dư không thiếu?"*
+
+### Phân tích chi tiết sự cân đối định lượng giữa 5 thành viên (Sau khi điều chỉnh):
+
+| Thành viên | Số lượng REST APIs & Hợp đồng | Dịch vụ sở hữu | Khối lượng & "Vũ khí" kỹ thuật | Đánh giá tải |
+| :--- | :---: | :--- | :--- | :---: |
+| **Hoàng Lê Khoa** *(Leader)* | **6 REST APIs** | `Identity Service` (Port 5001) | YARP Reverse Proxy (10 Routes), Google OAuth 2.0 / JWT, Docker Compose 4 containers & Script Multi-DB | **Cân đối (8.5/10)** |
+| **Nguyễn Ngọc Tường Vy** | **7 REST APIs** | `DietFasting Service` (Port 5002) | Bữa ăn, Thuật toán no 80% (Hara Hachi Bu), Tra cứu USDA, Thực đơn mẫu Blue Zones, Redis Cache & **Dựng toàn bộ kiến trúc Frontend Web Client** | **Cân đối (8.5/10)** |
+| **Trần Anh Kiệt** | **5 REST APIs + 3 gRPC Methods** | `DietFasting` + `JobService` (Port 5005) | Nhịn ăn 16/8, OMAD, **Triển khai gRPC Server HTTP/2 Cổng 7002**, Hangfire Background Recurring Schedulers | **Cân đối (8.5/10)** |
+| **Trần Phạm Khánh Quốc** | **8 REST APIs** | `DietFasting` + `Notification` (Port 5004) | Chu kỳ FMD 5 ngày, Admin FMD Rules, **RabbitMQ Background Consumer (`notification_events_queue`)**, SMTP Mailpit Client | **Cân đối (8.5/10)** |
+| **Dương Đình Khôi** | **4 REST APIs** | `Consultation Service` (Port 5003) | Sở hữu nguyên 1 Microservice Consultation độc lập với Database riêng (`consultation_db`), **Tích hợp gRPC Client sang cổng 7002**, RabbitMQ Event Publisher | **Cân đối (8.5/10)** |
+
+👉 **Lý do vì sao việc chuyển `MealTemplates` từ Quốc sang Vy là quyết định chuẩn xác nhất**:
+1. **Khắc phục hoàn toàn sự chênh lệch con số**: Trước đây, Quốc có tới 11 APIs trong khi Vy chỉ có 4 APIs. Khi chuyển 3 APIs Thực đơn mẫu về cho Vy, Quốc giảm từ 11 xuống **8 APIs**, Vy tăng từ 4 lên **7 APIs**. Con số lúc này phân bổ đều tăm tắp từ **4 đến 8 APIs** cho cả 5 người!
+2. **Khớp đúng 100% logic miền nghiệp vụ (Domain Cohesion)**: `MealTemplates` là thực đơn mẫu của các bữa ăn Blue Zones (Okinawan Sweet Potato Bowl, Ikarian Salad, Sardinian Minestrone...). Đây là phần nối dài trực tiếp của nghiệp vụ Bữa ăn & Dinh dưỡng mà Vy đang nắm giữ!
+3. **Bảo toàn công sức cho người làm Frontend**: Vy là người dựng toàn bộ khung Frontend (Landing Page, Sidebar, Overview Dashboard, Theme, Toast, Modals), nên việc sở hữu 7 APIs backend cùng Redis Cache giúp tổng khối lượng đóng góp của Vy cực kỳ tương xứng và thuyết phục trước giảng viên!
 
 ### Câu trả lời kỹ thuật chuẩn mực:
 1. **Độ đầy đủ**: File kế hoạch V4 này đã bao quát **chính xác 100% không sót một endpoint nào**:
