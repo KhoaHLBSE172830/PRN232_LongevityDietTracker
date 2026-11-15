@@ -316,3 +316,127 @@ sequenceDiagram
      docker compose up -d
      ```
    * Toàn bộ 4 cơ sở hạ tầng (Postgres 5432, Redis 6379, RabbitMQ 5672/15672, Mailpit 1025/8025) sẽ sẵn sàng 100%.
+
+
+---
+
+## 8. HƯỚNG DẪN KHỞI CHẠY FRONTEND & BẢN ĐỒ KHÔNG GIAN LÀM VIỆC (FRONTEND ONBOARDING GUIDE)
+
+> [!IMPORTANT]
+> **Dành riêng cho 4 bạn (Khoa, Kiệt, Quốc, Khôi) khi vừa pull code về máy:**  
+> Đọc kỹ mục này để biết chính xác lệnh khởi chạy giao diện Web và vị trí thư mục của riêng mình!
+
+### 1. Hướng Dẫn 3 Bước Khởi Chạy Frontend (Quickstart Commands)
+
+Khi vừa pull nhánh `vy` (hoặc sau khi Khoa merge vào `dev`), mở Terminal tại thư mục gốc của Solution và chạy 3 lệnh sau:
+
+```bash
+# Bước 1: Di chuyển vào thư mục Web Client
+cd src/Clients/web-app
+
+# Bước 2: Cài đặt các gói thư viện (React, Tailwind, Lucide Icons, Axios)
+npm install
+
+# Bước 3: Khởi chạy máy chủ giao diện nội bộ (Local Dev Server)
+npm run dev
+```
+
+Sau khi chạy lệnh trên, terminal sẽ cung cấp đường link:
+👉 **URL truy cập giao diện**: `http://localhost:5173` (Mở trên Chrome/Edge).
+
+> [!TIP]
+> **Cơ chế Chạy Thử An Toàn (Mock Fallback)**:  
+> Frontend đã được tích hợp sẵn dữ liệu mẫu dự phòng. Ngay cả khi các bạn chưa bật Backend hoặc chưa mở Docker, web vẫn hiển thị đầy đủ giao diện đẹp mắt, không bao giờ bị lỗi trắng trang (White Screen)!
+
+---
+
+### 2. Bản Đồ Phân Chia Không Gian Làm Việc Frontend (`src/Clients/web-app/src/`)
+
+Để **triệt tiêu 100% xung đột mã nguồn (Zero Merge Conflict)**, toàn bộ Frontend được chia thành 2 vùng rõ rệt:
+
+```text
+src/Clients/web-app/src/
+│
+├── App.jsx                             # Điều hướng chính [Landing Page] ↔ [Dashboard]
+├── main.jsx                            # Điểm khởi động React
+│
+├── shared/                             # 🛑 [VÙNG CHUNG ĐÃ KHÓA - VY ĐÃ DỰNG CHUẨN - KHÔNG SỬA]
+│   ├── components/                     
+│   │   ├── Sidebar.jsx                 # Thanh menu bên trái (Thu gọn/mở rộng, nhớ trạng thái)
+│   │   ├── Navbar.jsx                  # Thanh tiêu đề trên cùng, ngày tháng & chuỗi sống khỏe
+│   │   └── Toast.jsx                   # Khung popup thông báo mượt mà
+│   ├── pages/                          
+│   │   ├── LandingPage.jsx             # Trang giới thiệu công khai bên ngoài (Minimal Luxury)
+│   │   └── OverviewDashboard.jsx       # Trang tổng quan 4 trụ cột sức khỏe bên trong
+│   └── services/                       
+│       └── apiClient.js                # Cấu hình gốc Axios trỏ vào Gateway (https://localhost:7159)
+│
+└── features/                           # 🟢 [PHÒNG LÀM VIỆC RIÊNG CỦA TỪNG BẠN - TỰ DO CODE]
+    │
+    ├── auth/                           # 🔐 [PHÒNG CỦA KHOA]
+    │   ├── AuthModal.jsx               # Form popup Đăng nhập & Đăng ký
+    │   ├── ProfileView.jsx             # Màn hình Hồ sơ cá nhân & Thể trạng
+    │   └── authApi.js                  # 👉 Nơi Khoa viết hàm gọi API Auth & Profile
+    │
+    ├── meals/                          # 🥗 [PHÒNG CỦA VY]
+    │   ├── MealsView.jsx               # Màn hình Nhật ký 4 bữa ăn & Thước đo no 80% (Hara Hachi Bu)
+    │   ├── AddMealModal.jsx            # Popup chọn món, tính Calo, Đạm, Xơ & Tra cứu USDA
+    │   └── mealsApi.js                 # 👉 Nơi Vy viết hàm gọi API Meals, Nutrition & Templates
+    │
+    ├── fasting/                        # ⏱️ [PHÒNG CỦA KIỆT]
+    │   ├── FastingView.jsx             # Màn hình Bộ đếm giờ Nhịn ăn gián đoạn 16/8 & OMAD
+    │   └── fastingApi.js               # 👉 Nơi Kiệt viết hàm gọi API Fasting (Start, End, Active)
+    │
+    ├── fmd/                            # 🌿 [PHÒNG CỦA QUỐC]
+    │   ├── FmdView.jsx                 # Màn hình Lộ trình 5 ngày FMD & Thông báo sức khỏe
+    │   └── fmdApi.js                   # 👉 Nơi Quốc viết hàm gọi API FMD & Rules
+    │
+    └── consultation/                   # 🩺 [PHÒNG CỦA KHÔI]
+        ├── ConsultationView.jsx        # Màn hình Đặt lịch tư vấn & Bác sĩ gửi lời khuyên
+        └── consultationApi.js          # 👉 Nơi Khôi viết hàm gọi API Consultation
+```
+
+---
+
+### 3. Bảng Tra Cứu Nhanh Cho 5 Bạn (Ai Làm Gì Ở Đâu?)
+
+| Bạn | Thư mục của bạn | Các file bạn toàn quyền chỉnh sửa | Nhiệm vụ chính khi ráp nối API |
+| :--- | :--- | :--- | :--- |
+| **Hoàng Lê Khoa** | `src/features/auth/` | `authApi.js`<br>`AuthModal.jsx`<br>`ProfileView.jsx` | Bật kết nối gọi `POST /api/auth/login`, `POST /api/auth/register` và lưu Access Token vào session/localStorage. |
+| **Nguyễn Ngọc Tường Vy** | `src/features/meals/` | `mealsApi.js`<br>`MealsView.jsx`<br>`AddMealModal.jsx` | Bật kết nối gọi `POST /api/meals` và `GET /api/nutrition/search`, cập nhật dữ liệu calo thật lên thước đo no 80%. |
+| **Trần Anh Kiệt** | `src/features/fasting/` | `fastingApi.js`<br>`FastingView.jsx` | Gắn sự kiện nút "Bắt Đầu Nhịn Ăn" gọi `POST /api/fasting/start`, cập nhật thời gian đếm ngược thực tế. |
+| **Trần Phạm Khánh Quốc** | `src/features/fmd/` | `fmdApi.js`<br>`FmdView.jsx` | Gắn sự kiện nút "Bắt Đầu Chu Kỳ FMD Mới" gọi `POST /api/fmd/start`, hiển thị trạng thái chu kỳ ngày 1-5. |
+| **Dương Đình Khôi** | `src/features/consultation/` | `consultationApi.js`<br>`ConsultationView.jsx` | Gắn sự kiện form đặt lịch gọi `POST /api/consultations/book` và nút gửi lời khuyên gọi `POST /api/consultations/advice`. |
+
+---
+
+### 4. Quy Tắc 3 Bước "Cắm Dây" API Cực Dễ Hiểu (3-Step Integration Rule)
+
+Khi một bạn muốn nối giao diện của mình vào backend vừa viết:
+
+* **Bước 1**: Mở file `*Api.js` trong thư mục của mình (ví dụ Kiệt mở `fastingApi.js`).
+* **Bước 2**: Sử dụng đối tượng `apiClient` có sẵn để gọi endpoint Gateway:
+  ```javascript
+  import { apiClient } from '../../shared/services/apiClient';
+
+  export const fastingApi = {
+    startFasting: async (dto) => {
+      // Gọi trực tiếp qua YARP Gateway cổng 7159
+      const response = await apiClient.post('/api/fasting/start', dto);
+      return response.data.data;
+    },
+  };
+  ```
+* **Bước 3**: Mở file `*View.jsx` tương ứng, import hàm từ file `*Api.js` và truyền dữ liệu khi người dùng bấm nút:
+  ```javascript
+  const handleStart = async () => {
+    const result = await fastingApi.startFasting({ userId, fastingType: 1 });
+    console.log("Phiên nhịn ăn đã tạo:", result);
+  };
+  ```
+
+> [!CAUTION]
+> **Quy Tắc Vàng Giữ An Toàn Tuyệt Đối**:
+> * **KHÔNG SỬA** các file trong thư mục `src/shared/` (Sidebar, Navbar, Theme, Layout...).
+> * **KHÔNG SỬA** file `*View.jsx` hay `*Api.js` của bạn khác.
+> * Chỉ code trong đúng thư mục `features/{tên_của_mình}/`. Nhờ đó, dù cả 5 bạn cùng sửa code cùng lúc thì khi Git merge cũng **không bao giờ bị báo đỏ hay xung đột dòng lệnh**!
