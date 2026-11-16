@@ -12,8 +12,9 @@ export function DoctorProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  // silent = làm mới ngầm (không hiện trạng thái đang tải) để lịch mới của hội viên tự xuất hiện.
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const me = getSession();
@@ -25,12 +26,14 @@ export function DoctorProvider({ children }) {
     } catch (err) {
       setError(err.message || 'Không tải được dữ liệu chuyên gia.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     reload();
+    const timer = setInterval(() => reload(true), 10000);
+    return () => clearInterval(timer);
   }, [reload]);
 
   const value = useMemo(() => ({ profile, sessions, loading, error, reload }), [profile, sessions, loading, error, reload]);

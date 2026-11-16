@@ -162,3 +162,18 @@ Ba loại email của Notification (cảnh báo FMD, xác nhận đặt lịch, 
 - **Khôi:** xác nhận, hủy lịch vẫn chưa phát sự kiện/email; lịch riêng từng bác sĩ.
 - **Khoa:** như mục 1 (băm mật khẩu, Admin seed, đổi họ tên, Google).
 - Email nhắc nhịn ăn của phiên không có email trong JWT vẫn rơi về `user@example.com` (`FastingReminderService`); nên bỏ gửi khi không có địa chỉ.
+
+
+---
+
+## 7. Lỗi "hội viên đặt lịch, bác sĩ không thấy" (16/11/2026)
+
+**Nguyên nhân gốc:** lịch hẹn gắn với *hồ sơ chuyên gia* (`nutritionist_profiles`), còn bác sĩ đăng nhập thấy lịch qua `nutritionist_profiles.user_id` trùng `userId` trong JWT. Ba hồ sơ seed của Consultation có `user_id` **giả** (`aaaa…`, `bbbb…`, `cccc…`), nên chỉ hồ sơ nào được gắn tay với một tài khoản thật thì bác sĩ mới thấy lịch. Hội viên đặt với bác sĩ chưa gắn (ở demo là BS. CKI Trần Thanh Tùng) thì **không ai nhìn thấy** lịch đó.
+
+**Đã sửa:**
+- `scripts/seed-demo.js` gắn **đủ 3 hồ sơ** với 3 tài khoản thật: `bacsi@longevity.test` (Đặng Minh Tuấn), `nutritionist@longevitytracker.com` (Lê Thị Hoàng Oanh, tài khoản Khoa seed), `bacsi3@longevity.test` (Trần Thanh Tùng). Chạy lại: `node scripts/seed-demo.js`.
+- **Portal chuyên gia tự làm mới mỗi 10 giây** nên lịch mới của hội viên tự xuất hiện, không cần tải lại trang.
+- **Bác sĩ nhận thông báo "Lịch tư vấn mới"**: sự kiện `ConsultationBooked` mang thêm `NutritionistUserId`; Notification tạo thông báo trong ứng dụng cho bác sĩ (hiện ở chuông).
+- Test mới `docs/tests/e2e-booking-sync.js` (24 kiểm tra): với từng bác sĩ, hội viên đặt lịch thì đúng bác sĩ đó thấy, bác sĩ khác bị 403, bác sĩ có thông báo, xác nhận xong hội viên thấy trạng thái mới.
+
+**Còn thiếu (P3):** Admin gắn hồ sơ chuyên gia với tài khoản ngay trên giao diện; chặn đặt lịch với bác sĩ chưa gắn tài khoản. Hiện bác sĩ mới (tạo ngoài seed) phải gắn bằng SQL.

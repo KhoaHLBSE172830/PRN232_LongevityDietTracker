@@ -53,7 +53,8 @@ public record ConsultationBookedIntegrationEvent(
     Guid UserId,
     Guid NutritionistId,
     DateTime ScheduledAt,
-    string? RecipientEmail = null) : IntegrationEvent;
+    string? RecipientEmail = null,
+    Guid? NutritionistUserId = null) : IntegrationEvent;
 
 // Published by Job Service
 public record FastingScheduleTriggerIntegrationEvent(

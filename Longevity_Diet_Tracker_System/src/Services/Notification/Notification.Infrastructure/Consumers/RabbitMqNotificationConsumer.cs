@@ -203,6 +203,18 @@ public class RabbitMqNotificationConsumer : BackgroundService
                         htmlBody,
                         string.IsNullOrWhiteSpace(bookedEvent.RecipientEmail) ? NotificationChannel.InApp : NotificationChannel.Email,
                         EventId: bookedEvent.Id.ToString()), stoppingToken);
+
+                    // Báo cho chuyên gia có lịch mới (thông báo trong ứng dụng, hiện ở chuông của portal chuyên gia).
+                    if (bookedEvent.NutritionistUserId is { } doctorUserId && doctorUserId != Guid.Empty)
+                    {
+                        await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
+                            doctorUserId,
+                            doctorUserId.ToString(),
+                            "Lịch tư vấn mới cần xác nhận",
+                            $"Hội viên vừa đặt lịch tư vấn vào lúc {bookedEvent.ScheduledAt:yyyy-MM-dd HH:mm} UTC. Vào mục Lịch hẹn để xác nhận.",
+                            NotificationChannel.InApp,
+                            EventId: bookedEvent.Id + ":doctor"), stoppingToken);
+                    }
                 }
             }
             else if (routingKey.StartsWith("user.registered"))

@@ -10,9 +10,9 @@ const PASSWORD = 'Password123!';
 const ACCOUNTS = [
   { email: 'minhanh@longevity.test', name: 'Minh Anh', role: 0 },
   { email: 'admin@longevity.test', name: 'Quản trị viên', role: 2 },
-  { email: 'bacsi@longevity.test', name: 'BS. Demo', role: 1 },
+  { email: 'bacsi@longevity.test', name: 'TS. BS Đặng Minh Tuấn', role: 1, profileId: '11111111-1111-1111-1111-111111111111' },
+  { email: 'bacsi3@longevity.test', name: 'BS. CKI Trần Thanh Tùng', role: 1, profileId: '33333333-3333-3333-3333-333333333333' },
 ];
-const NUTRITIONIST_PROFILE_ID = '11111111-1111-1111-1111-111111111111';
 
 async function call(method, path, token, body) {
   const res = await fetch(GW + path, {
@@ -43,9 +43,20 @@ async function login(email) {
     psql('identity_db', `UPDATE users SET role = ${a.role} WHERE id = '${ids[a.email]}';`);
   }
 
-  // Gán hồ sơ bác sĩ đầu tiên (seed) cho tài khoản bác sĩ để đăng nhập được vai trò bác sĩ.
-  psql('consultation_db', `UPDATE nutritionist_profiles SET user_id = '${ids['bacsi@longevity.test']}' WHERE id = '${NUTRITIONIST_PROFILE_ID}';`);
-  console.log('Đã gán hồ sơ TS. BS Đặng Minh Tuấn cho bacsi@longevity.test');
+  // Mỗi hồ sơ bác sĩ seed phải gắn với một tài khoản thật, nếu không lịch hội viên đặt với bác sĩ đó sẽ không ai thấy.
+  for (const a of ACCOUNTS.filter((x) => x.profileId)) {
+    psql('consultation_db', `UPDATE nutritionist_profiles SET user_id = '${ids[a.email]}' WHERE id = '${a.profileId}';`);
+    console.log(`Đã gán hồ sơ "${a.name}" cho ${a.email}`);
+  }
+
+  // Tài khoản do Identity tự seed khi khởi động (Khoa): gắn bác sĩ mẫu với hồ sơ chuyên gia thứ hai.
+  try {
+    const r = await call('POST', '/api/auth/login', null, { email: 'nutritionist@longevitytracker.com', password: 'Nutritionist@123456' });
+    if (r.status === 200) {
+      psql('consultation_db', `UPDATE nutritionist_profiles SET user_id = '${r.data.userId}' WHERE id = '22222222-2222-2222-2222-222222222222';`);
+      console.log('Đã gán hồ sơ ThS. BS Lê Thị Hoàng Oanh cho nutritionist@longevitytracker.com');
+    }
+  } catch { /* bỏ qua nếu không có tài khoản seed */ }
 
   // Mẫu bữa ăn (Admin tạo; đăng nhập lại để token có role Admin).
   const admin = await login('admin@longevity.test');
@@ -63,5 +74,5 @@ async function login(email) {
   }
 
   console.log('\nTài khoản demo (mật khẩu chung: ' + PASSWORD + '):');
-  for (const a of ACCOUNTS) console.log(`  ${a.email}  (${['Hội viên', 'Chuyên gia', 'Admin'][a.role]})`);
+  for (const a of ACCOUNTS) console.log(`  ${a.email}  (${['Hội viên', 'Chuyên gia', 'Admin'][a.role]}${a.profileId ? ', hồ sơ ' + a.name : ''})`);
 })().catch((e) => { console.error(e.message); process.exit(1); });
