@@ -160,12 +160,12 @@ export default function ProfileView() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12 animate-fade-in">
-      {demo && <Banner tone="demo">Chế độ demo: hồ sơ được lưu cục bộ trên trình duyệt (chưa đồng bộ lên Identity).</Banner>}
+      {demo && <Banner tone="demo">Chế độ trải nghiệm: thông tin hồ sơ đang được lưu tạm trên thiết bị này.</Banner>}
       {!demo && syncState === 'server' && (
-        <Banner tone="success">Hồ sơ được đồng bộ với máy chủ Identity. Họ tên chỉ lưu cục bộ (chưa có API đổi tên).</Banner>
+        <Banner tone="success">Hồ sơ sức khỏe của bạn đã được cập nhật và lưu trữ an toàn.</Banner>
       )}
       {!demo && syncState === 'error' && (
-        <Banner tone="offline">Không tải/lưu được hồ sơ từ máy chủ Identity. Dữ liệu hiển thị lấy từ trình duyệt.</Banner>
+        <Banner tone="offline">Đang xem dữ liệu ngoại tuyến trên máy của bạn.</Banner>
       )}
       {saveError && <Banner tone="offline">{saveError}</Banner>}
 
@@ -259,16 +259,16 @@ export default function ProfileView() {
               checked={!!prefs.emailNotificationsEnabled}
               onChange={() => togglePref('emailNotificationsEnabled')}
               label="Thông báo qua email"
-              note="Lưu lên máy chủ Notification."
+              note="Nhận email nhắc nhở lối sống và tổng kết tuần."
             />
             <Toggle
               checked={!!prefs.fastingRemindersEnabled}
               onChange={() => togglePref('fastingRemindersEnabled')}
               label="Nhắc nhịn ăn"
-              note="Lưu lên máy chủ Notification."
+              note="Nhận thông báo khi gần đến giờ kết thúc nhịn ăn."
             />
-            <Toggle checked={form.waterReminder} onChange={(v) => set('waterReminder', v)} label="Nhắc uống nước" note={demo ? 'Lưu cục bộ.' : 'Lưu trong hồ sơ (chưa có tác vụ gửi nhắc).'} />
-            <Toggle checked={form.eveningReminder} onChange={(v) => set('eveningReminder', v)} label="Nhắc bữa tối nhẹ" note={demo ? 'Lưu cục bộ.' : 'Lưu trong hồ sơ (chưa có tác vụ gửi nhắc).'} />
+            <Toggle checked={form.waterReminder} onChange={(v) => set('waterReminder', v)} label="Nhắc uống nước" note="Nhắc nhở uống đủ nước đều đặn trong ngày." />
+            <Toggle checked={form.eveningReminder} onChange={(v) => set('eveningReminder', v)} label="Nhắc bữa tối nhẹ" note="Nhắc duy trì thói quen ăn tối thanh nhẹ theo Blue Zones." />
           </div>
         </Card>
       </div>

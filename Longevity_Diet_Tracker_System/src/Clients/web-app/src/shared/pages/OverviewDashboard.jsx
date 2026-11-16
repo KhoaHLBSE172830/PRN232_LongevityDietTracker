@@ -209,7 +209,7 @@ export default function OverviewDashboard({
     <div className="mx-auto w-full max-w-[1440px] space-y-7 pb-10 animate-fade-in">
       {demo && (
         <Banner tone="demo">
-          Chế độ demo: chưa đăng nhập bằng tài khoản thật, dữ liệu hiển thị là dữ liệu minh họa/cục bộ.
+          Chế độ trải nghiệm: bạn đang xem dữ liệu minh họa. Hãy đăng nhập tài khoản chính thức để lưu lại hành trình sống khỏe của riêng bạn nhé!
         </Banner>
       )}
 

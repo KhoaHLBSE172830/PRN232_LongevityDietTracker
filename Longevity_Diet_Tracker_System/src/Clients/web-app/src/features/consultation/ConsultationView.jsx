@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Stethoscope, Calendar, FileText, CheckCircle2, UserCheck, 
-  Activity, Send, Clock, ShieldCheck, HeartPulse, User, 
+import { createPortal } from 'react-dom';
+import {
+  Stethoscope, Calendar, FileText, CheckCircle2, UserCheck,
+  Activity, Send, Clock, ShieldCheck, HeartPulse, User,
   Award, ArrowRight, X, Sparkles, MessageSquareHeart, AlertCircle
 } from 'lucide-react';
 import { consultationApi, getConsultationAuthSession, isOfflineError, SAMPLE_NUTRITIONISTS } from './consultationApi';
 import { DEMO_USER } from '../../shared/services/apiClient';
+import ConfirmModal from '../../shared/components/ConfirmModal';
 
 export default function ConsultationView() {
   const [activeTab, setActiveTab] = useState('member'); // 'member' | 'nutritionist'
@@ -166,14 +168,22 @@ export default function ConsultationView() {
     await loadData();
   };
 
-  const handleCancelSession = async (sessionId) => {
-    if (!window.confirm('Bạn chắc chắn muốn hủy lịch hẹn này?')) return;
+  const [cancelSessionId, setCancelSessionId] = useState(null);
+
+  const handleCancelSession = (sessionId) => {
+    setCancelSessionId(sessionId);
+  };
+
+  const confirmCancelSession = async () => {
+    if (!cancelSessionId) return;
     try {
-      await consultationApi.cancelSession(sessionId);
+      await consultationApi.cancelSession(cancelSessionId);
       showToast('Đã hủy lịch tư vấn.', 'success');
       await refreshAfterChange();
     } catch (err) {
       showToast(`❌ Không hủy được lịch: ${err.message}`, 'error');
+    } finally {
+      setCancelSessionId(null);
     }
   };
 
@@ -196,7 +206,7 @@ export default function ConsultationView() {
       return;
     }
     const scheduledDateTime = bookingSlot;
-    
+
     const authSession = getConsultationAuthSession();
     const effectiveUserId = authSession?.userId || DEMO_USER.id;
 
@@ -285,13 +295,12 @@ export default function ConsultationView() {
     <div className="space-y-6 max-w-7xl mx-auto pb-16 animate-fade-in text-slate-800">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className={`fixed bottom-6 right-6 z-50 text-white text-xs px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 border animate-slide-up ${
-          toastType === 'error'
+        <div className={`fixed bottom-6 right-6 z-50 text-white text-xs px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 border animate-slide-up ${toastType === 'error'
             ? 'bg-rose-900 border-rose-700'
             : toastType === 'warning'
-            ? 'bg-amber-900 border-amber-700'
-            : 'bg-slate-900 border-slate-700'
-        }`}>
+              ? 'bg-amber-900 border-amber-700'
+              : 'bg-slate-900 border-slate-700'
+          }`}>
           {toastType === 'error' ? (
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
           ) : toastType === 'warning' ? (
@@ -309,14 +318,14 @@ export default function ConsultationView() {
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-extrabold uppercase tracking-widest text-purple-300 bg-purple-950/80 px-3 py-1 rounded-full border border-purple-700/60 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-              Microservice Domain 2: Consultation Service
+              ĐỒNG HÀNH CHUYÊN SÂU
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
             Tư Vấn Bác Sĩ Dinh Dưỡng Trường Thọ
           </h1>
           <p className="text-xs md:text-sm text-purple-200/80 max-w-2xl leading-relaxed">
-            Kết nối trực tiếp chuyên gia Blue Zones, đồng bộ hồ sơ qua gRPC cổng 7002 và nhận phiếu lời khuyên y khoa cá nhân hóa.
+            Kết nối trực tiếp chuyên gia Blue Zones và nhận phiếu lời khuyên y khoa cá nhân hóa.
           </p>
         </div>
 
@@ -324,27 +333,25 @@ export default function ConsultationView() {
         <div className="bg-white/10 backdrop-blur-md p-1.5 rounded-2xl flex items-center border border-white/10 shrink-0">
           <button
             onClick={() => setActiveTab('member')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'member'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'member'
                 ? 'bg-white text-purple-950 shadow-md font-extrabold'
                 : 'text-purple-200 hover:text-white'
-            }`}
+              }`}
           >
             <User className="w-4 h-4" />
             <span>Dành Cho Hội Viên</span>
           </button>
           {isDoctor && (
-          <button
-            onClick={() => setActiveTab('nutritionist')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'nutritionist'
-                ? 'bg-purple-500 text-white shadow-md font-extrabold'
-                : 'text-purple-200 hover:text-white'
-            }`}
-          >
-            <Stethoscope className="w-4 h-4" />
-            <span>Cổng Bác Sĩ & gRPC</span>
-          </button>
+            <button
+              onClick={() => setActiveTab('nutritionist')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'nutritionist'
+                  ? 'bg-purple-500 text-white shadow-md font-extrabold'
+                  : 'text-purple-200 hover:text-white'
+                }`}
+            >
+              <Stethoscope className="w-4 h-4" />
+              <span>Cổng Bác Sĩ</span>
+            </button>
           )}
         </div>
       </div>
@@ -359,7 +366,7 @@ export default function ConsultationView() {
             <div role="alert" className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
               <span>
-                <strong>Không kết nối được máy chủ.</strong> Đang hiển thị danh sách bác sĩ mẫu (dữ liệu giả); chưa thể đặt lịch cho đến khi máy chủ hoạt động.
+                <strong>Chế độ xem trước.</strong> Đang hiển thị danh sách chuyên gia mẫu. Bạn vui lòng đăng nhập để tiến hành đặt lịch tư vấn nhé.
               </span>
             </div>
           )}
@@ -691,9 +698,9 @@ export default function ConsultationView() {
       {/* ========================================================================= */}
       {/* MODAL 1: FORM ĐẶT LỊCH HẸN VỚI CHUYÊN GIA */}
       {/* ========================================================================= */}
-      {isBookModalOpen && selectedNutritionist && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-scale-up space-y-4">
+      {isBookModalOpen && selectedNutritionist && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 my-auto animate-scale-up space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-base">Đặt Lịch Tư Vấn</h3>
               <button onClick={() => setIsBookModalOpen(false)} className="text-slate-400 hover:text-slate-600">
@@ -741,13 +748,12 @@ export default function ConsultationView() {
                           type="button"
                           disabled={!sl.isAvailable}
                           onClick={() => setBookingSlot(sl.startUtc)}
-                          className={`py-2 rounded-xl border font-bold transition-all ${
-                            active
+                          className={`py-2 rounded-xl border font-bold transition-all ${active
                               ? 'bg-purple-600 text-white border-purple-600'
                               : sl.isAvailable
-                              ? 'bg-white text-slate-700 border-slate-200 hover:border-purple-400'
-                              : 'bg-slate-100 text-slate-300 border-slate-100 line-through cursor-not-allowed'
-                          }`}
+                                ? 'bg-white text-slate-700 border-slate-200 hover:border-purple-400'
+                                : 'bg-slate-100 text-slate-300 border-slate-100 line-through cursor-not-allowed'
+                            }`}
                         >
                           {label}
                         </button>
@@ -785,19 +791,20 @@ export default function ConsultationView() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: SOI TIẾN ĐỘ SỨC KHỎE ĐỒNG BỘ gRPC (:7002) */}
+      {/* MODAL 2: SOI TIẾN ĐỘ SỨC KHỎE HỘI VIÊN */}
       {/* ========================================================================= */}
-      {isGrpcModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 animate-scale-up space-y-5">
+      {isGrpcModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 my-auto animate-scale-up space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <Activity className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-extrabold text-slate-900 text-base">Hồ Sơ Sức Khỏe Đồng Bộ gRPC (Cổng 7002)</h3>
+                <h3 className="font-extrabold text-slate-900 text-base">Hồ Sơ & Tiến Trình Sức Khỏe Hội Viên</h3>
               </div>
               <button onClick={() => setIsGrpcModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -894,15 +901,16 @@ export default function ConsultationView() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: KÊ ĐƠN LỜI KHUYÊN & BẮN SỰ KIỆN RABBITMQ */}
+      {/* MODAL 3: KÊ ĐƠN LỜI KHUYÊN Y KHOA */}
       {/* ========================================================================= */}
-      {isAdviceModalOpen && selectedSessionForAdvice && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-scale-up space-y-5">
+      {isAdviceModalOpen && selectedSessionForAdvice && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 my-auto animate-scale-up space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-purple-600" />
@@ -915,7 +923,7 @@ export default function ConsultationView() {
 
             <div className="text-xs text-purple-900 bg-purple-50 p-3 rounded-2xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>Thao tác này sẽ hoàn tất buổi khám và kích hoạt <strong>RabbitMQ Publisher</strong> gửi thông báo đến người dùng!</span>
+              <span>Thao tác này sẽ hoàn tất buổi khám và gửi phiếu lời khuyên trực tiếp đến hội viên!</span>
             </div>
 
             <form onSubmit={handleSendAdvice} className="space-y-4">
@@ -971,13 +979,25 @@ export default function ConsultationView() {
                   className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Gửi Phiếu Lời Khuyên & Bắn RabbitMQ</span>
+                  <span>Gửi Phiếu Lời Khuyên</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
+
+      <ConfirmModal
+        isOpen={!!cancelSessionId}
+        onClose={() => setCancelSessionId(null)}
+        onConfirm={confirmCancelSession}
+        title="Hủy Lịch Tư Vấn"
+        message="Bạn có chắc chắn muốn hủy lịch hẹn tư vấn này? Khung giờ sẽ được hoàn trả lại cho chuyên gia."
+        confirmText="Xác nhận hủy"
+        cancelText="Giữ lại lịch"
+        danger={true}
+      />
     </div>
   );
 }

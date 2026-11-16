@@ -19,7 +19,7 @@ export default function DoctorPatients({ initialUserId = null }) {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 pb-12 animate-fade-in">
-      <DoctorHeader title="Hồ sơ bệnh nhân" subtitle="Hội viên đã đặt lịch với bạn. Số liệu sức khỏe lấy trực tiếp từ DietFasting qua gRPC." />
+      <DoctorHeader title="Hồ sơ bệnh nhân" subtitle="Hội viên đã đặt lịch với bạn. Số liệu sức khỏe và nhật ký dinh dưỡng của hội viên." />
       {gate}
       {actions.error && <Banner tone="offline">{actions.error}</Banner>}
       {actions.message && <Banner tone="success">{actions.message}</Banner>}
