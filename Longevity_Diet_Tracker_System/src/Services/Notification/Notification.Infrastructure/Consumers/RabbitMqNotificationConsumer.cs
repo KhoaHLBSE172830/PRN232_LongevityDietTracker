@@ -67,6 +67,7 @@ public class RabbitMqNotificationConsumer : BackgroundService
                 _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "advice.#");
                 _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "fmd.#");
                 _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "consultation.#");
+                _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "user.#");
                 _channel.BasicQos(0, 1, false);
 
                 var consumer = new AsyncEventingBasicConsumer(_channel);
@@ -202,6 +203,31 @@ public class RabbitMqNotificationConsumer : BackgroundService
                         htmlBody,
                         string.IsNullOrWhiteSpace(bookedEvent.RecipientEmail) ? NotificationChannel.InApp : NotificationChannel.Email,
                         EventId: bookedEvent.Id.ToString()), stoppingToken);
+                }
+            }
+            else if (routingKey.StartsWith("user.registered"))
+            {
+                var userEvent = JsonSerializer.Deserialize<UserRegisteredIntegrationEvent>(message);
+                if (userEvent != null)
+                {
+                    var htmlBody = $"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; border: 1px solid #10b981; border-radius: 12px; padding: 20px; background-color: #f0fdf4;">
+                            <h2 style="color: #047857; margin-top: 0;">🌿 Chào mừng bạn đến với Longevity Diet Tracker!</h2>
+                            <p style="color: #1f2937; font-size: 15px;">Xin chào <strong>{userEvent.FullName}</strong>,</p>
+                            <p style="color: #1f2937; font-size: 15px; line-height: 1.5;">
+                                Tài khoản của bạn ({userEvent.Email}) đã được tạo thành công với vai trò <strong>{userEvent.Role}</strong>.
+                                Bắt đầu hành trình chăm sóc sức khỏe và kéo dài tuổi thọ theo nguyên tắc Blue Zones ngay hôm nay!
+                            </p>
+                        </div>
+                        """;
+
+                    await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
+                        userEvent.UserId,
+                        userEvent.Email,
+                        "Chào mừng bạn đến với Longevity Diet Tracker (Blue Zones)",
+                        htmlBody,
+                        NotificationChannel.Email,
+                        EventId: userEvent.Id.ToString()), stoppingToken);
                 }
             }
 
