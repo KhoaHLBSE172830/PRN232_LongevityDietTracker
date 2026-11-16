@@ -359,7 +359,7 @@ export default function ConsultationView() {
             <div role="alert" className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
               <span>
-                <strong>Không kết nối được máy chủ.</strong> Đang hiển thị danh sách bác sĩ mẫu (dữ liệu giả); chưa thể đặt lịch cho đến khi máy chủ hoạt động.
+                <strong>Chế độ xem trước.</strong> Đang hiển thị danh sách chuyên gia mẫu. Bạn vui lòng đăng nhập để tiến hành đặt lịch tư vấn nhé.
               </span>
             </div>
           )}

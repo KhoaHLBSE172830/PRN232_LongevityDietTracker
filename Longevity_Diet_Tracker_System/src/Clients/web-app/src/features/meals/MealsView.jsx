@@ -160,7 +160,7 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
       {isDemoMode() && (
-        <Banner tone="demo">Chế độ demo: bữa ăn được lưu cục bộ trên trình duyệt, không gửi lên máy chủ.</Banner>
+        <Banner tone="demo">Chế độ trải nghiệm: các món ăn đang được lưu tạm thời trên máy của bạn.</Banner>
       )}
 
       {/* CHỌN NGÀY */}

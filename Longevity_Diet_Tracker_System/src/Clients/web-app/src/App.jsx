@@ -70,9 +70,9 @@ export default function App() {
     setActiveTab(defaultTab(currentRole()));
     showToast({
       type: 'success',
-      title: demo ? 'Đã vào chế độ demo' : 'Đăng nhập thành công',
+      title: demo ? 'Chế độ trải nghiệm' : 'Đăng nhập thành công',
       message: demo
-        ? 'Máy chủ xác thực chưa sẵn sàng nên dữ liệu hiển thị là dữ liệu minh họa.'
+        ? 'Bạn đang ở chế độ xem thử. Đăng nhập tài khoản chính thức để lưu lại lịch sử theo dõi sức khỏe nhé!'
         : `Chào mừng ${user.name} trở lại với Longevity Diet Tracker!`,
     });
   };
