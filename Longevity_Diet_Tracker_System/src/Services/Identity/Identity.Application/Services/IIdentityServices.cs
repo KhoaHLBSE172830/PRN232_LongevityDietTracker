@@ -15,6 +15,9 @@ public interface IUserService
     Task<UserProfileDto> GetProfileAsync(Guid userId);
     Task<UserProfileDto> UpdateProfileAsync(Guid userId, UserProfileDto profileDto);
     Task SetRoleAsync(Guid userId, Identity.Domain.Enums.UserRole role);
+    Task<PagedResultDto<UserSummaryDto>> GetUsersPagedAsync(UserQueryParameters query);
+    Task<UserStatusResponseDto> SetUserStatusAsync(Guid currentAdminId, Guid targetUserId, SetUserStatusRequestDto request);
+    Task<AdminDashboardStatsDto> GetAdminStatsAsync();
 }
 
 public interface IJwtService
