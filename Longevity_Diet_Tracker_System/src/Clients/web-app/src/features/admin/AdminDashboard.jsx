@@ -19,19 +19,21 @@ const Mark = ({ ok }) =>
 
 export default function AdminDashboard({ onNavigate }) {
   const [stats, setStats] = useState({ rules: null, templates: null, nutri: null, verified: null });
+  const [userStats, setUserStats] = useState(null);
   const [probes, setProbes] = useState([]);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    const [rules, templates, nutri] = await Promise.allSettled([adminApi.getFmdRules(), adminApi.getTemplates(), adminApi.getNutritionists()]);
+    const [rules, templates, nutri, users] = await Promise.allSettled([adminApi.getFmdRules(), adminApi.getTemplates(), adminApi.getNutritionists(), adminApi.getUserStats()]);
+    setUserStats(users.status === 'fulfilled' ? users.value : null);
     setStats({
       rules: rules.status === 'fulfilled' ? rules.value : null,
       templates: templates.status === 'fulfilled' ? templates.value.length : null,
       nutri: nutri.status === 'fulfilled' ? nutri.value.length : null,
       verified: nutri.status === 'fulfilled' ? nutri.value.filter((n) => n.isVerified).length : null,
     });
-    if ([rules, templates, nutri].some((r) => r.status === 'rejected')) setError('Một số dữ liệu không tải được (dịch vụ chưa sẵn sàng hoặc không có quyền).');
+    if ([rules, templates, nutri, users].some((r) => r.status === 'rejected')) setError('Một số dữ liệu không tải được (dịch vụ chưa sẵn sàng hoặc không có quyền).');
     else setError('');
   }, []);
 
@@ -59,6 +61,73 @@ export default function AdminDashboard({ onNavigate }) {
       <AdminHeader title="Tổng quan quản trị" subtitle="Trạng thái dịch vụ, dữ liệu danh mục và bảng phân quyền của hệ thống." />
       {error && <Banner tone="demo">{error}</Banner>}
       {drift && <Banner tone="demo">Quy tắc FMD đang khác thiết kế 1100/780/760/760/780 kcal. Vào mục Quy tắc FMD để chỉnh.</Banner>}
+
+      {userStats && (
+        <>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {[
+              ['Tổng người dùng', userStats.userStats.totalUsers, 'tài khoản', 'admin-users'],
+              ['Đang hoạt động', userStats.userStats.activeUsers, 'tài khoản', 'admin-users'],
+              ['Đã khóa', userStats.userStats.lockedUsers, 'tài khoản', 'admin-users'],
+              ['Email đã xác thực', userStats.userStats.emailVerifiedUsers, 'tài khoản', null],
+            ].map(([label, value, unit, tab]) => (
+              <button
+                key={label}
+                type="button"
+                disabled={!tab}
+                onClick={() => tab && onNavigate?.(tab)}
+                className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all enabled:hover:border-indigo-300 enabled:hover:shadow-md"
+              >
+                <p className="text-xs font-bold text-slate-500">{label}</p>
+                <p className="mt-1 text-3xl font-extrabold text-slate-900">{value}</p>
+                <p className="text-xs font-semibold text-indigo-700">{unit}</p>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card title="Theo vai trò">
+              {[
+                ['Hội viên', userStats.roleStats.regularUsers, 'bg-emerald-500'],
+                ['Chuyên gia', userStats.roleStats.nutritionists, 'bg-purple-500'],
+                ['Quản trị', userStats.roleStats.administrators, 'bg-indigo-500'],
+              ].map(([label, n, color]) => {
+                const total = Math.max(1, userStats.userStats.totalUsers);
+                return (
+                  <div key={label} className="mb-2.5 last:mb-0">
+                    <div className="flex justify-between text-xs font-semibold text-slate-700">
+                      <span>{label}</span>
+                      <span>{n}</span>
+                    </div>
+                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.round((n / total) * 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+            <Card title="Đăng ký mới">
+              <ul className="space-y-1.5 text-xs font-semibold text-slate-700">
+                <li className="flex justify-between"><span>Hôm nay</span><b>{userStats.registrationTrends.newUsersToday}</b></li>
+                <li className="flex justify-between"><span>7 ngày qua</span><b>{userStats.registrationTrends.newUsersThisWeek}</b></li>
+                <li className="flex justify-between"><span>30 ngày qua</span><b>{userStats.registrationTrends.newUsersThisMonth}</b></li>
+              </ul>
+            </Card>
+            <Card title="Hồ sơ sức khỏe">
+              <ul className="space-y-1.5 text-xs font-semibold text-slate-700">
+                <li className="flex justify-between"><span>Hồ sơ hoàn thiện</span><b>{userStats.longevityProfileStats.completedProfilesCount} ({Math.round(userStats.longevityProfileStats.profileCompletionRatePercent)}%)</b></li>
+                <li className="flex justify-between"><span>Kcal mục tiêu trung bình</span><b>{userStats.longevityProfileStats.averageDailyCalorieTarget ? Math.round(userStats.longevityProfileStats.averageDailyCalorieTarget) : '—'}</b></li>
+                <li className="flex justify-between"><span>Bật nhắc nước / bữa tối</span><b>{userStats.longevityProfileStats.waterReminderEnabledCount} / {userStats.longevityProfileStats.eveningReminderEnabledCount}</b></li>
+              </ul>
+              {Object.keys(userStats.longevityProfileStats.fastingTypePreferences || {}).length > 0 && (
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Nhịn ăn ưa thích: {Object.entries(userStats.longevityProfileStats.fastingTypePreferences).map(([k, v]) => `${k} (${v})`).join(', ')}
+                </p>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {tiles.map(([label, value, unit, tab]) => (

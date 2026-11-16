@@ -74,6 +74,20 @@ export const adminApi = {
   createTemplate: (body) =>
     wrap(async () => (await apiClient.post('/api/mealtemplates', body)).data?.data, 'Không tạo được mẫu bữa ăn.'),
 
+  // ---- Người dùng (Identity, chỉ Admin): danh sách phân trang, khóa/mở khóa, thống kê
+  /** params: { pageNumber, pageSize, searchTerm, role ('User'|'Nutritionist'|'Admin'), isActive (true|false) } */
+  listUsers: (params = {}) =>
+    wrap(async () => {
+      const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined));
+      return (await apiClient.get('/api/users', { params: clean })).data?.data;
+    }, 'Không tải được danh sách người dùng.'),
+
+  setUserStatus: (userId, isActive, reason) =>
+    wrap(async () => (await apiClient.put(`/api/users/${userId}/status`, { isActive, reason: reason || null })).data?.data, 'Không đổi được trạng thái tài khoản.'),
+
+  getUserStats: () =>
+    wrap(async () => (await apiClient.get('/api/users/stats')).data?.data, 'Không tải được thống kê người dùng.'),
+
   // ---- Phân quyền: chỉ Admin. Role mới có hiệu lực khi người đó đăng nhập lại (role nằm trong JWT).
   setUserRole: (userId, role) =>
     wrap(async () => (await apiClient.put(`/api/users/${userId}/role`, { role })).data?.data, 'Không đổi được role.'),

@@ -61,3 +61,33 @@ test('lỗi mạng được đánh dấu network; lỗi kiểm tra dữ liệu l
 test('thiết kế FMD 1100/780/760/760/780', () => {
   assert.deepEqual([1, 2, 3, 4, 5].map((d) => DESIGN_FMD_KCAL[d]), [1100, 780, 760, 760, 780]);
 });
+
+test('danh sách người dùng gửi bộ lọc dạng query và bỏ giá trị rỗng', async () => {
+  let seen;
+  respondWith((config) => {
+    seen = config;
+    return ok(config, { data: { items: [], totalCount: 0 } });
+  });
+  await adminApi.listUsers({ pageNumber: 2, pageSize: 10, searchTerm: '', role: 'Nutritionist', isActive: false });
+  assert.equal(seen.url, '/api/users');
+  assert.deepEqual(seen.params, { pageNumber: 2, pageSize: 10, role: 'Nutritionist', isActive: false });
+});
+
+test('khóa tài khoản gọi PUT /api/users/{id}/status kèm lý do', async () => {
+  let seen;
+  respondWith((config) => {
+    seen = config;
+    return ok(config, { data: { isActive: false } });
+  });
+  await adminApi.setUserStatus('u9', false, 'Vi phạm');
+  assert.equal(seen.method, 'put');
+  assert.equal(seen.url, '/api/users/u9/status');
+  assert.deepEqual(JSON.parse(seen.data), { isActive: false, reason: 'Vi phạm' });
+});
+
+test('tự khóa mình bị backend từ chối (400) hiện đúng thông điệp', async () => {
+  respondWith(() => {
+    throw httpError(400, { Message: 'Bạn không thể tự khóa tài khoản quản trị của chính mình.' });
+  });
+  await assert.rejects(adminApi.setUserStatus('me', false), (e) => e.status === 400 && /tự khóa/.test(e.message));
+});

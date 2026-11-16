@@ -58,12 +58,14 @@ async function mailTo(email) {
   check('Bắt đầu phiên 30 phút (đã chạy 20 phút) = 201', start.status === 201, JSON.stringify(start.json));
   const trig = await call('POST', `${JOB}/jobs/trigger/fasting-check`);
   check('Kích hoạt fasting-check trong Hangfire = 200', trig.status === 200 && !!trig.data?.hangfireJobId, JSON.stringify(trig.json));
-  const msg = await waitFor(async () => (await mailTo(email))[0]);
+  // Có thêm email chào mừng khi đăng ký (Identity), nên lọc theo tiêu đề.
+  const reminder = (list) => list.filter((m) => /nhịn ăn/i.test(m.Subject));
+  const msg = await waitFor(async () => reminder(await mailTo(email))[0]);
   check('Mailpit nhận email nhắc nhịn ăn gửi tới đúng địa chỉ', !!msg, 'không có email sau 25 giây');
   check('Tiêu đề email nói phiên sắp kết thúc hoặc đã đạt mục tiêu', !!msg && /nhịn ăn/i.test(msg.Subject), msg?.Subject);
   const trig2 = await call('POST', `${JOB}/jobs/trigger/fasting-check`);
   await sleep(4000);
-  const count = (await mailTo(email)).length;
+  const count = reminder(await mailTo(email)).length;
   check('Kích hoạt lần 2 không gửi trùng (chống trùng bằng Redis/EventId)', trig2.status === 200 && count === 1, `count=${count}`);
 
   console.log('== Cảnh báo vượt kcal FMD → email ==');
@@ -78,7 +80,7 @@ async function mailTo(email) {
     return n.length ? n : null;
   });
   check('Có thông báo cảnh báo FMD trong hộp thư ứng dụng', !!alertLogs, 'không có thông báo');
-  const alertMail = await waitFor(async () => (await mailTo(u2email))[0], 15, 1000);
+  const alertMail = await waitFor(async () => (await mailTo(u2email)).find((m) => /FMD/.test(m.Subject)), 15, 1000);
   check('Email cảnh báo FMD gửi tới đúng địa chỉ của người dùng (không còn user@example.com)', !!alertMail && /FMD/.test(alertMail.Subject), alertMail?.Subject);
 
   console.log('== Tư vấn: email đặt lịch và email lời khuyên tới hội viên ==');

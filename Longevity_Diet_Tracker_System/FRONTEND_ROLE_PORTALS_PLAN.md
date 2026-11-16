@@ -151,3 +151,54 @@ Có thể làm ngay bằng cách **tách** phần "Cổng Bác Sĩ & gRPC" trong
 | Thống kê (số buổi, số phiếu) | Nutritionist | **Chưa có** (có thể suy ra từ danh sách lịch hẹn ở FE) |
 
 Kết luận: các thao tác lõi của bác sĩ (xem lịch, xác nhận, hủy, xem dữ liệu bệnh nhân qua gRPC, kê lời khuyên) **đủ API để dựng portal Chuyên gia ngay (P2)**. Các mục "Chưa có" nằm ở P3.
+
+
+## 12. Cập nhật: Portal Chuyên gia (P2) đã làm xong
+
+Đăng nhập tài khoản role Nutritionist (vd. `bacsi@longevity.test`) vào **portal Chuyên gia riêng** (tím), không còn dùng giao diện hội viên. `src/features/doctor/`, chỉ dùng API đã có:
+
+| Mục | Chức năng | API |
+|---|---|---|
+| Tổng quan | Số lịch chờ xác nhận, lịch hôm nay (giờ Việt Nam), số hội viên, số buổi hoàn thành; 5 lịch sắp tới có nút Xác nhận, Hủy, Kê lời khuyên; hồ sơ chuyên gia (tags) | `GET nutritionists`, `GET nutritionist/{id}` |
+| Lịch hẹn | Lọc theo trạng thái và ngày; Xác nhận, Hủy, Kê lời khuyên, mở Hồ sơ bệnh nhân | `confirm`, `cancel` |
+| Hồ sơ bệnh nhân | Danh sách hội viên đã đặt lịch (gom từ lịch hẹn); bảng sức khỏe qua gRPC (nhịn ăn, dinh dưỡng trung bình, FMD kèm định mức theo ngày, thời gian phản hồi); các buổi của hội viên đó | `GET review-user/{userId}` |
+| Kê lời khuyên | Danh sách buổi chờ lời khuyên, form 3 ô (≥ 5 ký tự), danh sách buổi đã hoàn thành | `POST advice` |
+
+- Tài khoản role Nutritionist **chưa gắn hồ sơ chuyên gia** sẽ thấy thông báo hướng dẫn nhờ Admin gắn hồ sơ.
+- Logic thuần tách ra `doctorLogic.js` và có test: `tests/doctorLogic.test.js` (5), cập nhật `tests/roles.test.js` → `npm test` **32/32 đạt**.
+- Đã thao tác thật bằng `bacsi@longevity.test`: lọc lịch chờ, xác nhận, xem hồ sơ gRPC của hội viên, báo lỗi khi ô lời khuyên ngắn, gửi lời khuyên (buổi chuyển Hoàn thành, email tới hộp thư hội viên trong Mailpit), hủy lịch còn lại.
+- Tab "Cổng Bác Sĩ & gRPC" cũ trong mục Tư vấn của hội viên không còn được dùng (chuyên gia không vào portal hội viên nữa).
+- **Còn thiếu (cần API ở P3):** tên hội viên (đang hiển thị mã rút gọn), nội dung phiếu đã kê, chuyên gia tự sửa hồ sơ.
+
+
+---
+
+## 13. Lỗi "hội viên đặt lịch, bác sĩ không thấy" (16/11/2026)
+
+**Nguyên nhân gốc:** lịch hẹn gắn với *hồ sơ chuyên gia* (`nutritionist_profiles`), còn bác sĩ đăng nhập thấy lịch qua `nutritionist_profiles.user_id` trùng `userId` trong JWT. Ba hồ sơ seed của Consultation có `user_id` **giả** (`aaaa…`, `bbbb…`, `cccc…`), nên chỉ hồ sơ nào được gắn tay với một tài khoản thật thì bác sĩ mới thấy lịch. Hội viên đặt với bác sĩ chưa gắn (ở demo là BS. CKI Trần Thanh Tùng) thì **không ai nhìn thấy** lịch đó.
+
+**Đã sửa:**
+- `scripts/seed-demo.js` gắn **đủ 3 hồ sơ** với 3 tài khoản thật: `bacsi@longevity.test` (Đặng Minh Tuấn), `nutritionist@longevitytracker.com` (Lê Thị Hoàng Oanh, tài khoản Khoa seed), `bacsi3@longevity.test` (Trần Thanh Tùng). Chạy lại: `node scripts/seed-demo.js`.
+- **Portal chuyên gia tự làm mới mỗi 10 giây** nên lịch mới của hội viên tự xuất hiện, không cần tải lại trang.
+- **Bác sĩ nhận thông báo "Lịch tư vấn mới"**: sự kiện `ConsultationBooked` mang thêm `NutritionistUserId`; Notification tạo thông báo trong ứng dụng cho bác sĩ (hiện ở chuông).
+- Test mới `docs/tests/e2e-booking-sync.js` (24 kiểm tra): với từng bác sĩ, hội viên đặt lịch thì đúng bác sĩ đó thấy, bác sĩ khác bị 403, bác sĩ có thông báo, xác nhận xong hội viên thấy trạng thái mới.
+
+**Còn thiếu (P3):** Admin gắn hồ sơ chuyên gia với tài khoản ngay trên giao diện; chặn đặt lịch với bác sĩ chưa gắn tài khoản. Hiện bác sĩ mới (tạo ngoài seed) phải gắn bằng SQL.
+
+
+---
+
+## 14. API Admin mới của Identity (Khoa) đã nối vào giao diện (16/11/2026)
+
+Khoa đã thêm vào Identity: liệt kê người dùng có phân trang, khóa/mở khóa tài khoản, thống kê. Qua Gateway gọi được ở cả `/api/users...` và `/api/admin/...`; FE dùng nhóm `/api/users` (cùng prefix đã có route).
+
+| API | Quyền | Đã nối vào |
+|---|---|---|
+| `GET /api/users?pageNumber&pageSize&searchTerm&role&isActive` | Admin | Trang **Người dùng và phân quyền** (bảng, tìm kiếm có debounce, lọc vai trò và trạng thái, phân trang); ô chọn người nhận ở **Thông báo hệ thống** |
+| `PUT /api/users/{id}/status` `{isActive, reason}` | Admin; không tự khóa mình (400); khóa thì thu hồi phiên và chặn đăng nhập (403) | Nút **Khóa / Mở khóa** kèm lý do trong trang Người dùng |
+| `GET /api/users/stats` | Admin | **Tổng quan quản trị**: tổng, đang hoạt động, đã khóa, email xác thực; theo vai trò; đăng ký 1, 7, 30 ngày; hồ sơ sức khỏe (hoàn thiện, kcal trung bình, nhịn ăn ưa thích) |
+| `PUT /api/users/{id}/role` (đã có) | Admin | Chọn vai trò ngay trên từng dòng rồi **Lưu** (thay cho ô nhập GUID cũ) |
+
+Việc cần làm cho bản cũ ở mục 6 của kế hoạch này: dòng "Người dùng và phân quyền" và "GET /api/users" **đã xong**; còn thiếu: sửa/xóa mẫu bữa ăn, gắn hồ sơ chuyên gia với tài khoản, giám sát JobService.
+
+Kiểm thử: `tests/adminApi.test.js` thêm 3 test → `npm test` **35/35**; script mới `docs/tests/e2e-admin-users.js` **19/19**; 5 script e2e cũ vẫn đạt (42 + 45 + 34 + 16 + 24); đã thao tác trên trình duyệt bằng admin (tìm kiếm, lọc, khóa và mở khóa, đổi role và trả lại, nút tự khóa bị vô hiệu, chọn người nhận thông báo).

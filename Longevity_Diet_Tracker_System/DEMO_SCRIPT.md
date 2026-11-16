@@ -21,7 +21,7 @@ node scripts/seed-demo.js
 | Vai trò | Email | Dùng ở |
 |---|---|---|
 | Hội viên | `minhanh@longevity.test` | WF-01, WF-02, WF-03 (cửa sổ chính) |
-| Chuyên gia | `bacsi@longevity.test` | WF-03 (cửa sổ ẩn danh) |
+| Chuyên gia | `bacsi@longevity.test` (Đặng Minh Tuấn), `nutritionist@longevitytracker.com` / `Nutritionist@123456` (Lê Thị Hoàng Oanh), `bacsi3@longevity.test` (Trần Thanh Tùng) | WF-03: đăng nhập **đúng bác sĩ mà hội viên đã chọn** (cửa sổ ẩn danh) |
 | Admin | `admin@longevity.test` | Portal quản trị riêng (xem mục 5b) |
 
 ### 0.3 Bố trí màn hình
@@ -42,7 +42,7 @@ Sau đó tải lại trang (F5).
 ### 0.5 Checklist trước giờ G
 - [ ] Trang web mở được, đăng nhập `minhanh` **không có banner vàng "Chế độ demo"**.
 - [ ] Tab Mailpit trống.
-- [ ] Cửa sổ ẩn danh đã đăng nhập `bacsi`, thấy tab **"Cổng Bác Sĩ & gRPC"** ở mục Tư vấn.
+- [ ] Cửa sổ ẩn danh đã đăng nhập `bacsi`, thấy **portal Chuyên gia** (menu Tổng quan, Lịch hẹn, Hồ sơ bệnh nhân, Kê lời khuyên).
 - [ ] Mục Bữa ăn có 4 mẫu bữa ăn gợi ý.
 - [ ] (Tùy chọn) mở sẵn **một tab thứ hai** của `minhanh` ở mục Nhịn ăn, chưa bắt đầu phiên, để show ngoại lệ ở WF-01.
 
@@ -113,14 +113,14 @@ Sau đó tải lại trang (F5).
 | 4 | Chọn một khung giờ, nhập mục tiêu tư vấn → xác nhận | Toast "Đã đặt lịch thành công"; **Lịch Hẹn Của Tôi** hiện trạng thái **Chờ xác nhận**; có nút **Hủy lịch** |
 | 5 | Mailpit | Email "Consultation Booking Confirmed" tới hội viên |
 
-**Phần chuyên gia (cửa sổ B, `bacsi@longevity.test`)**
+**Phần chuyên gia (cửa sổ B, `bacsi@longevity.test`)** — portal Chuyên gia riêng (menu: Tổng quan, Lịch hẹn, Hồ sơ bệnh nhân, Kê lời khuyên)
 
 | Bước | Thao tác | Kết quả |
 |---|---|---|
-| 6 | **Tư vấn chuyên gia → tab "Cổng Bác Sĩ & gRPC"** | Thấy lịch hẹn của hội viên vừa đặt |
-| 7 | **Xác nhận lịch** | Trạng thái → **Đã xác nhận** |
-| 8 | **Soi Dữ Liệu Sức Khỏe (gRPC)** | Cửa sổ hiện dữ liệu nhịn ăn, dinh dưỡng, FMD của hội viên, kèm thời gian gọi gRPC (ms) |
-| 9 | **Kê Đơn Lời Khuyên** → điền 3 ô (mỗi ô ≥ 5 ký tự), ví dụ: `Tăng chất xơ từ thực vật` / `Thêm đậu và rau xanh mỗi bữa` / `Giữ 14:10 trong tuần đầu` → **Gửi Phiếu Lời Khuyên** | Báo thành công; lịch → **Đã hoàn thành** |
+| 6 | **Tổng quan** (tự làm mới sau ≤ 10 giây; chuông có thông báo "Lịch tư vấn mới") | Thẻ "Chờ xác nhận" tăng thêm 1; lịch vừa đặt nằm trong "Lịch hẹn sắp tới" |
+| 7 | **Lịch hẹn** → bấm **Xác nhận** ở lịch vừa đặt | Báo "Đã xác nhận lịch ..."; trạng thái → **Đã xác nhận** |
+| 8 | **Hồ sơ bệnh nhân** → chọn hội viên | Bảng sức khỏe qua **gRPC**: phiên nhịn ăn, dinh dưỡng trung bình, FMD kèm "Đồng bộ qua gRPC trong N ms" |
+| 9 | **Kê lời khuyên** → bấm **Kê lời khuyên** ở buổi đang chờ → điền 3 ô (≥ 5 ký tự), ví dụ: `Tăng chất xơ từ thực vật` / `Thêm đậu và rau xanh mỗi bữa` / `Giữ 14:10 trong tuần đầu` → **Gửi lời khuyên** | Báo "Đã gửi lời khuyên"; buổi chuyển sang **Đã hoàn thành** |
 
 **Quay lại hội viên (cửa sổ A)**
 | 10 | Tải lại mục Tư vấn | Phần **Ghi Chú Tư Vấn** hiện lời khuyên; lịch **Đã hoàn thành** |
@@ -133,7 +133,7 @@ Sau đó tải lại trang (F5).
 - Hội viên không tự xác nhận lịch được (API trả 403): chỉ bác sĩ phụ trách hoặc Admin.
 - (Tùy chọn) bấm **Hủy lịch** để cho thấy khung giờ được trả lại.
 
-**Nếu lỗi:** gRPC không hiện → kiểm tra DietFasting gRPC cổng 7002. Không thấy tab bác sĩ → đang đăng nhập nhầm tài khoản (tab chỉ hiện với role Nutritionist hoặc Admin).
+**Nếu lỗi:** gRPC không hiện → kiểm tra DietFasting gRPC cổng 7002. Không thấy portal chuyên gia hoặc báo "chưa được gắn với hồ sơ chuyên gia" → tài khoản chưa có role Nutritionist hoặc chưa gắn hồ sơ (chạy `node scripts/seed-demo.js`).
 
 ---
 

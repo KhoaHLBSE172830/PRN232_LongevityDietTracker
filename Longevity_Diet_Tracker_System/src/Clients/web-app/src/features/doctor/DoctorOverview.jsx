@@ -24,7 +24,7 @@ export default function DoctorOverview({ onNavigate }) {
         title="Tổng quan chuyên gia"
         subtitle="Lịch hẹn, hội viên và công việc cần xử lý hôm nay."
         action={
-          <button type="button" onClick={reload} disabled={loading} className={ghostBtn}>
+          <button type="button" onClick={() => reload()} disabled={loading} className={ghostBtn}>
             Làm mới
           </button>
         }
