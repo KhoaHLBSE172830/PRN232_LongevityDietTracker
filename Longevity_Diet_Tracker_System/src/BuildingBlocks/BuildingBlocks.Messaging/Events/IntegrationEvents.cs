@@ -36,7 +36,8 @@ public record FmdCycleAlertIntegrationEvent(
     Guid FmdCycleId,
     Guid UserId,
     int DayNumber,
-    string Message) : IntegrationEvent;
+    string Message,
+    string? RecipientEmail = null) : IntegrationEvent;
 
 // Published by Consultation Service
 public record AdviceSentIntegrationEvent(
@@ -44,13 +45,15 @@ public record AdviceSentIntegrationEvent(
     Guid ConsultationSessionId,
     Guid UserId,
     Guid NutritionistId,
-    string AdviceSummary) : IntegrationEvent;
+    string AdviceSummary,
+    string? RecipientEmail = null) : IntegrationEvent;
 
 public record ConsultationBookedIntegrationEvent(
     Guid ConsultationId,
     Guid UserId,
     Guid NutritionistId,
-    DateTime ScheduledAt) : IntegrationEvent;
+    DateTime ScheduledAt,
+    string? RecipientEmail = null) : IntegrationEvent;
 
 // Published by Job Service
 public record FastingScheduleTriggerIntegrationEvent(

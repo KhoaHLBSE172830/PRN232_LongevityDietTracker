@@ -20,6 +20,9 @@ public class MealsController : ControllerBase
         _mealService = mealService;
     }
 
+    // Địa chỉ email nhận cảnh báo lấy từ JWT, không tin giá trị client gửi.
+    private string? CurrentUserEmail => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
+
     // Chủ bữa ăn luôn là người dùng trong JWT, không tin UserId client gửi lên.
     private Guid CurrentUserId =>
         Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id)
@@ -29,7 +32,7 @@ public class MealsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> LogMeal([FromBody] CreateMealLogDto dto)
     {
-        var result = await _mealService.LogMealAsync(dto with { UserId = CurrentUserId });
+        var result = await _mealService.LogMealAsync(dto with { UserId = CurrentUserId, NotificationEmail = CurrentUserEmail });
         return SuccessResp.Created(result, "Meal logged successfully (Blue Zones compliant)");
     }
 
@@ -47,7 +50,7 @@ public class MealsController : ControllerBase
     [HttpPut("{mealId:guid}")]
     public async Task<IActionResult> UpdateMeal(Guid mealId, [FromBody] UpdateMealLogDto dto)
     {
-        var result = await _mealService.UpdateMealAsync(mealId, CurrentUserId, User.IsInRole("Admin"), dto);
+        var result = await _mealService.UpdateMealAsync(mealId, CurrentUserId, User.IsInRole("Admin"), dto, CurrentUserEmail);
         return SuccessResp.Ok(result, "Meal updated successfully");
     }
 
@@ -361,6 +364,13 @@ public class HabitsController : ControllerBase
     {
         EnsureOwnerOrAdmin(userId);
         return SuccessResp.Ok(await _habitService.AddToDayAsync(userId, Today(date), dto), "Habit updated");
+    }
+
+    [HttpGet("user/{userId:guid}/streak")]
+    public async Task<IActionResult> GetStreak(Guid userId, [FromQuery] DateOnly? date)
+    {
+        EnsureOwnerOrAdmin(userId);
+        return SuccessResp.Ok(await _habitService.GetStreakAsync(userId, Today(date)));
     }
 
     [HttpGet("user/{userId:guid}/range")]

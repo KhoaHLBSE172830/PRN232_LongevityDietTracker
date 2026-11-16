@@ -28,7 +28,8 @@ public record BookConsultationDto(
     [Required(ErrorMessage = "ScheduledAtUtc không được để trống")]
     DateTime ScheduledAtUtc,
     [MaxLength(500)]
-    string? Notes);
+    string? Notes,
+    string? UserEmail = null);
 
 public record ConsultationSessionDto(
     Guid Id,

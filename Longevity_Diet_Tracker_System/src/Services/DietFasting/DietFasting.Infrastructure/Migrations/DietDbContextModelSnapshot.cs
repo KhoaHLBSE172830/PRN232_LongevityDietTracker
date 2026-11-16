@@ -220,9 +220,17 @@ namespace DietFasting.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("log_date");
 
+                    b.Property<int>("MindfulMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("mindful_minutes");
+
                     b.Property<int>("MovementMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("movement_minutes");
+
+                    b.Property<int>("SleepMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("sleep_minutes");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")

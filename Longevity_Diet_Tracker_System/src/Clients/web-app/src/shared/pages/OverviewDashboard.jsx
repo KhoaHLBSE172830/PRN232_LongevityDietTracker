@@ -18,7 +18,7 @@ import {
 import { useCurrentUser, isDemoMode } from '../services/userStore';
 import { loadOverview } from '../services/overviewData';
 import { Banner } from '../components/ui';
-import { habitsApi, WATER_STEP_ML, MOVEMENT_STEP_MIN } from '../../features/habits/habitsApi';
+import { habitsApi, WATER_STEP_ML, MOVEMENT_STEP_MIN, SLEEP_STEP_MIN, MINDFUL_STEP_MIN } from '../../features/habits/habitsApi';
 
 // ==========================================
 // COMPONENT: PILLAR CARD
@@ -155,14 +155,17 @@ export default function OverviewDashboard({
   const demo = isDemoMode();
   const [data, setData] = useState(null);
   const [habit, setHabit] = useState(null);
+  const [habitStreak, setHabitStreak] = useState(null);
 
   useEffect(() => {
     habitsApi.getDay().then(setHabit);
+    habitsApi.getStreak().then(setHabitStreak);
   }, [user.id]);
 
   const bumpHabit = async (delta) => {
     const next = await habitsApi.add(delta);
     setHabit(next);
+    habitsApi.getStreak().then(setHabitStreak);
   };
 
   useEffect(() => {
@@ -399,6 +402,11 @@ export default function OverviewDashboard({
             <h3 className="text-[16px] font-extrabold tracking-tight text-[#25342A]">
               Thói quen sống khỏe mỗi ngày
             </h3>
+            {habitStreak && (
+              <span className="ml-2 rounded-full bg-[#FBF3E5] px-2.5 py-0.5 text-[10px] font-bold text-[#8A5A0B]">
+                Chuỗi đạt mục tiêu: {habitStreak.currentStreakDays} ngày
+              </span>
+            )}
           </div>
 
           <p className="pl-3 text-[11px] text-[#849087]">
@@ -432,6 +440,30 @@ export default function OverviewDashboard({
                 down: { movementMinutes: -MOVEMENT_STEP_MIN },
                 color: 'bg-[#438477]',
                 icon: Heart,
+              },
+              {
+                key: 'sleep',
+                title: 'Giấc ngủ',
+                value: habit.sleepMinutes ?? 0,
+                goal: habit.sleepGoalMinutes ?? 480,
+                unit: 'phút',
+                step: SLEEP_STEP_MIN,
+                up: { sleepMinutes: SLEEP_STEP_MIN },
+                down: { sleepMinutes: -SLEEP_STEP_MIN },
+                color: 'bg-[#6B5BB5]',
+                icon: Sparkles,
+              },
+              {
+                key: 'mindful',
+                title: 'Thiền, thư giãn',
+                value: habit.mindfulMinutes ?? 0,
+                goal: habit.mindfulGoalMinutes ?? 10,
+                unit: 'phút',
+                step: MINDFUL_STEP_MIN,
+                up: { mindfulMinutes: MINDFUL_STEP_MIN },
+                down: { mindfulMinutes: -MINDFUL_STEP_MIN },
+                color: 'bg-[#C18435]',
+                icon: Sprout,
               },
             ].map((h) => {
               const Icon = h.icon;

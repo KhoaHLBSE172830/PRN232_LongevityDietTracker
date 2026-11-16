@@ -79,7 +79,7 @@ public class ConsultationService : IConsultationService
             throw new ConsultationBadRequestException("Chuyên gia dinh dưỡng này chưa được xác minh hoặc không sẵn sàng nhận lịch tư vấn.");
 
         // ConsultationSession.Schedule enforces ScheduledAtUtc in future & UTC format
-        var session = ConsultationSession.Schedule(dto.UserId, dto.NutritionistId, dto.ScheduledAtUtc, 45, dto.Notes);
+        var session = ConsultationSession.Schedule(dto.UserId, dto.NutritionistId, dto.ScheduledAtUtc, 45, dto.Notes, dto.UserEmail);
 
         // Không cho đặt trùng khung giờ đã có lịch (Pending/Confirmed) của cùng bác sĩ.
         var existing = await _sessionRepository.GetByNutritionistIdAsync(dto.NutritionistId);
@@ -92,7 +92,7 @@ public class ConsultationService : IConsultationService
         if (_eventBus != null)
         {
             await _eventBus.PublishAsync(new ConsultationBookedIntegrationEvent(
-                session.Id, session.UserId, session.NutritionistId, session.ScheduledAtUtc));
+                session.Id, session.UserId, session.NutritionistId, session.ScheduledAtUtc, session.UserEmail));
         }
 
         return new ConsultationSessionDto(
@@ -247,7 +247,7 @@ public class ConsultationService : IConsultationService
         if (_eventBus != null)
         {
             await _eventBus.PublishAsync(new AdviceSentIntegrationEvent(
-                advice.Id, advice.ConsultationSessionId, advice.UserId, advice.NutritionistId, advice.AdviceSummary));
+                advice.Id, advice.ConsultationSessionId, advice.UserId, advice.NutritionistId, advice.AdviceSummary, session.UserEmail));
         }
 
         var nutritionist = await _nutritionistRepository.FindByIdAsync(session.NutritionistId);

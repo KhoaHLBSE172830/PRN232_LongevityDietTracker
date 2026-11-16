@@ -34,7 +34,8 @@ public record CreateMealLogDto(
     string? Notes = null,
     bool IsHaraHachiBuCompliant = true,
     int SatietyPercentage = 80,
-    int UtcOffsetMinutes = 0);
+    int UtcOffsetMinutes = 0,
+    string? NotificationEmail = null);
 
 public record UpdateMealLogDto(
     MealType MealType,
@@ -165,13 +166,20 @@ public record HabitDayDto(
     int WaterMl,
     int MovementMinutes,
     int WaterGoalMl,
-    int MovementGoalMinutes);
+    int MovementGoalMinutes,
+    int SleepMinutes = 0,
+    int MindfulMinutes = 0,
+    int SleepGoalMinutes = 480,
+    int MindfulGoalMinutes = 10);
 
 /// <summary>Đặt giá trị tuyệt đối trong ngày; trường null giữ nguyên.</summary>
-public record SetHabitDto(int? WaterMl = null, int? MovementMinutes = null);
+public record SetHabitDto(int? WaterMl = null, int? MovementMinutes = null, int? SleepMinutes = null, int? MindfulMinutes = null);
 
 /// <summary>Cộng thêm (số âm để hoàn tác).</summary>
-public record AddHabitDto(int WaterMl = 0, int MovementMinutes = 0);
+public record AddHabitDto(int WaterMl = 0, int MovementMinutes = 0, int SleepMinutes = 0, int MindfulMinutes = 0);
+
+/// <summary>Chuỗi ngày đạt mục tiêu thói quen cốt lõi (nước và vận động).</summary>
+public record HabitStreakDto(int CurrentStreakDays, int LongestStreakDays, int WaterGoalMl, int MovementGoalMinutes);
 
 
 /// <summary>Áp dụng mẫu bữa ăn thành một bữa ăn thật của người dùng.</summary>

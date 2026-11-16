@@ -40,12 +40,15 @@ public class ConsultationSession : BaseEntity
     public ConsultationStatus Status { get; set; } = ConsultationStatus.Pending;
     public string? Notes { get; set; }
 
+    /// <summary>Email hội viên lấy từ JWT lúc đặt lịch, dùng để gửi thông báo (Consultation không truy vấn được Identity).</summary>
+    public string? UserEmail { get; set; }
+
     public NutritionistProfile? Nutritionist { get; set; }
     public AdviceNote? AdviceNote { get; set; }
 
     public ConsultationSession() { }
 
-    public static ConsultationSession Schedule(Guid userId, Guid nutritionistId, DateTime scheduledAt, int durationMinutes = 45, string? notes = null)
+    public static ConsultationSession Schedule(Guid userId, Guid nutritionistId, DateTime scheduledAt, int durationMinutes = 45, string? notes = null, string? userEmail = null)
     {
         // N5: quy đổi đúng múi giờ. Chuỗi có offset (vd +07:00) được .NET đọc thành Local: phải ToUniversalTime(),
         // KHÔNG được chỉ gán nhãn Utc (sẽ lệch đúng bằng offset). Chuỗi không có múi giờ (Unspecified) coi là UTC.
@@ -68,7 +71,8 @@ public class ConsultationSession : BaseEntity
             ScheduledAtUtc = utcScheduled,
             DurationMinutes = durationMinutes > 0 ? durationMinutes : 45,
             Status = ConsultationStatus.Pending,
-            Notes = notes
+            Notes = notes,
+            UserEmail = string.IsNullOrWhiteSpace(userEmail) || userEmail.Length > 256 || !userEmail.Contains('@') ? null : userEmail.Trim()
         };
     }
 

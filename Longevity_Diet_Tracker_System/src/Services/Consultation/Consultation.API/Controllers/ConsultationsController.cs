@@ -58,7 +58,11 @@ public class ConsultationsController : ControllerBase
     [HttpPost("book")]
     public async Task<IActionResult> BookSession([FromBody] BookConsultationDto dto)
     {
-        var effectiveDto = dto with { UserId = CurrentUserId };
+        var effectiveDto = dto with
+        {
+            UserId = CurrentUserId,
+            UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email")
+        };
         var result = await _consultationService.BookSessionAsync(effectiveDto);
         return SuccessResp.Created(result, "Đặt lịch tư vấn với chuyên gia thành công");
     }

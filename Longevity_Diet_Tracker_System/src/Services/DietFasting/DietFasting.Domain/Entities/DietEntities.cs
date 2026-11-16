@@ -368,6 +368,8 @@ public class HabitLog : BaseEntity
     public DateOnly LogDate { get; set; }
     public int WaterMl { get; set; }
     public int MovementMinutes { get; set; }
+    public int SleepMinutes { get; set; }
+    public int MindfulMinutes { get; set; }
 
     public HabitLog() { }
 
@@ -379,16 +381,20 @@ public class HabitLog : BaseEntity
     }
 
     /// <summary>Đặt giá trị tuyệt đối (null = giữ nguyên).</summary>
-    public void Set(int? waterMl, int? movementMinutes)
+    public void Set(int? waterMl, int? movementMinutes, int? sleepMinutes = null, int? mindfulMinutes = null)
     {
+        if (sleepMinutes.HasValue) SleepMinutes = Validate(sleepMinutes.Value, MaxMovementMinutes, "SleepMinutes");
+        if (mindfulMinutes.HasValue) MindfulMinutes = Validate(mindfulMinutes.Value, MaxMovementMinutes, "MindfulMinutes");
         if (waterMl.HasValue) WaterMl = Validate(waterMl.Value, MaxWaterMl, "WaterMl");
         if (movementMinutes.HasValue) MovementMinutes = Validate(movementMinutes.Value, MaxMovementMinutes, "MovementMinutes");
         UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>Cộng thêm (có thể âm để hoàn tác), kết quả luôn nằm trong [0, tối đa].</summary>
-    public void Add(int waterMl, int movementMinutes)
+    public void Add(int waterMl, int movementMinutes, int sleepMinutes = 0, int mindfulMinutes = 0)
     {
+        SleepMinutes = Math.Clamp(SleepMinutes + sleepMinutes, 0, MaxMovementMinutes);
+        MindfulMinutes = Math.Clamp(MindfulMinutes + mindfulMinutes, 0, MaxMovementMinutes);
         WaterMl = Math.Clamp(WaterMl + waterMl, 0, MaxWaterMl);
         MovementMinutes = Math.Clamp(MovementMinutes + movementMinutes, 0, MaxMovementMinutes);
         UpdatedAt = DateTime.UtcNow;

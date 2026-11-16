@@ -147,17 +147,17 @@ public class RabbitMqNotificationConsumer : BackgroundService
                             <p style="color: #1f2937; font-size: 15px; line-height: 1.5;">{fmdEvent.Message}</p>
                             <hr style="border: none; border-top: 1px solid #fecaca; margin: 16px 0;" />
                             <p style="color: #7f1d1d; font-size: 13px; margin-bottom: 0;">
-                                🌿 <strong>Giao thức FMD (Dr. Valter Longo):</strong> Để duy trì trạng thái tự thực bào (Autophagy), vui lòng giữ mức năng lượng Ngày 1 ≤ 1100 kcal và Ngày 2–5 ≤ 725 kcal.
+                                🌿 <strong>Giao thức FMD (Dr. Valter Longo):</strong> Để duy trì trạng thái tự thực bào (Autophagy), vui lòng giữ mức năng lượng theo từng ngày: 1100 / 780 / 760 / 760 / 780 kcal.
                             </p>
                         </div>
                         """;
 
                     await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
                         fmdEvent.UserId,
-                        "user@example.com",
+                        fmdEvent.RecipientEmail ?? fmdEvent.UserId.ToString(),
                         $"FMD Cycle Day {fmdEvent.DayNumber} Alert - Calorie Limit Exceeded",
                         htmlBody,
-                        NotificationChannel.Email,
+                        string.IsNullOrWhiteSpace(fmdEvent.RecipientEmail) ? NotificationChannel.InApp : NotificationChannel.Email,
                         EventId: fmdEvent.Id.ToString()), stoppingToken);
                 }
             }
@@ -176,10 +176,10 @@ public class RabbitMqNotificationConsumer : BackgroundService
 
                     await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
                         adviceEvent.UserId,
-                        "user@example.com",
+                        adviceEvent.RecipientEmail ?? adviceEvent.UserId.ToString(),
                         "New Nutritionist Consultation Advice Received",
                         htmlBody,
-                        NotificationChannel.Email,
+                        string.IsNullOrWhiteSpace(adviceEvent.RecipientEmail) ? NotificationChannel.InApp : NotificationChannel.Email,
                         EventId: adviceEvent.Id.ToString()), stoppingToken);
                 }
             }
@@ -197,10 +197,10 @@ public class RabbitMqNotificationConsumer : BackgroundService
 
                     await notificationService.SendAndLogNotificationAsync(new SendNotificationRequest(
                         bookedEvent.UserId,
-                        "user@example.com",
+                        bookedEvent.RecipientEmail ?? bookedEvent.UserId.ToString(),
                         "Consultation Booking Confirmed",
                         htmlBody,
-                        NotificationChannel.Email,
+                        string.IsNullOrWhiteSpace(bookedEvent.RecipientEmail) ? NotificationChannel.InApp : NotificationChannel.Email,
                         EventId: bookedEvent.Id.ToString()), stoppingToken);
                 }
             }

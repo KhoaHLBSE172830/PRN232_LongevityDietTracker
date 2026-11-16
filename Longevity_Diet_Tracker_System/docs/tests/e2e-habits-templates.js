@@ -57,6 +57,31 @@ const food = (name, kcal) => ({ externalFoodId: `t-${name}`, foodName: name, ser
   check('Admin xem được thói quen người khác = 200', (await call('GET', `/api/habits/user/${a.id}?date=${day}`, adminTok)).status === 200);
   check('Không có token = 401', (await call('GET', `/api/habits/user/${a.id}?date=${day}`)).status === 401);
 
+  console.log('== KIỆT: Thói quen mở rộng (giấc ngủ, thiền) và chuỗi ngày ==');
+  const ext = await call('POST', `/api/habits/user/${a.id}/add?date=${day}`, a.token, { sleepMinutes: 450, mindfulMinutes: 10 });
+  check('Thêm giấc ngủ 450 phút và thiền 10 phút', ext.data?.sleepMinutes === 450 && ext.data?.mindfulMinutes === 10, JSON.stringify(ext.data));
+  check('Trả kèm mục tiêu ngủ 480 phút, thiền 10 phút', ext.data?.sleepGoalMinutes === 480 && ext.data?.mindfulGoalMinutes === 10);
+  check('Ngủ quá 1440 phút bị từ chối 400', (await call('PUT', `/api/habits/user/${a.id}?date=${day}`, a.token, { sleepMinutes: 2000 })).status === 400);
+  const s2 = await call('PUT', `/api/habits/user/${a.id}?date=${day}`, a.token, { sleepMinutes: 300 });
+  check('Đặt giấc ngủ giữ nguyên nước (1500) và thiền', s2.data?.sleepMinutes === 300 && s2.data?.waterMl === 1500 && s2.data?.mindfulMinutes === 10, JSON.stringify(s2.data));
+
+  const sd = new Date(Date.UTC(2027, 0, 20));
+  const dk = (back) => new Date(sd.getTime() - back * 86400000).toISOString().slice(0, 10);
+  const streakUser = await register('streak');
+  const hit = (d) => call('PUT', `/api/habits/user/${streakUser.id}?date=${d}`, streakUser.token, { waterMl: 2000, movementMinutes: 30 });
+  for (const back of [5, 3, 2, 1]) await hit(dk(back));
+  const st1 = await call('GET', `/api/habits/user/${streakUser.id}/streak?date=${dk(0)}`, streakUser.token);
+  check('Chuỗi: 3 ngày liên tiếp (hôm nay chưa đạt vẫn giữ chuỗi), dài nhất 3', st1.status === 200 && st1.data?.currentStreakDays === 3 && st1.data?.longestStreakDays === 3, JSON.stringify(st1.json));
+  await hit(dk(0));
+  const st2 = await call('GET', `/api/habits/user/${streakUser.id}/streak?date=${dk(0)}`, streakUser.token);
+  check('Đạt thêm hôm nay: chuỗi hiện tại 4', st2.data?.currentStreakDays === 4 && st2.data?.longestStreakDays === 4, JSON.stringify(st2.data));
+  await call('PUT', `/api/habits/user/${streakUser.id}?date=${dk(1)}`, streakUser.token, { waterMl: 1000 });
+  const st3 = await call('GET', `/api/habits/user/${streakUser.id}/streak?date=${dk(0)}`, streakUser.token);
+  check('Một ngày không đạt cắt chuỗi: hiện tại 1, dài nhất 2', st3.data?.currentStreakDays === 1 && st3.data?.longestStreakDays === 2, JSON.stringify(st3.data));
+  const st4 = await call('GET', `/api/habits/user/${streakUser.id}/streak?date=${new Date(sd.getTime() + 10 * 86400000).toISOString().slice(0, 10)}`, streakUser.token);
+  check('Quá 1 ngày không đạt: chuỗi hiện tại về 0', st4.data?.currentStreakDays === 0, JSON.stringify(st4.data));
+  check('Xem chuỗi của người khác = 403', (await call('GET', `/api/habits/user/${streakUser.id}/streak`, a.token)).status === 403);
+
   console.log('== VY: Mẫu bữa ăn ==');
   const tmpl = { name: 'Cháo đậu xanh', description: 'Bữa sáng nhẹ', associatedFastingType: 2, fmdDayNumber: null, totalCalories: 320, totalProteinGrams: 14, totalCarbsGrams: 50, totalFatGrams: 6, totalFiberGrams: 8 };
   check('Người thường tạo mẫu = 403', (await call('POST', '/api/mealtemplates', a.token, tmpl)).status === 403);

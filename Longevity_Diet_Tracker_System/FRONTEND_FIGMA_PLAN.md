@@ -174,3 +174,35 @@ Test mới: `node docs/tests/e2e-habits-templates.js` → **25/25 PASS**; hai sc
 - **Kiệt:** API thói quen (nước/vận động) + migration `AddHabitLogs` + route Gateway; thẻ thói quen ở Tổng quan đã bỏ nhãn "(Minh họa)" khi có dữ liệu thật.
 - **Vy:** `POST /api/mealtemplates/{id}/apply`; ngày theo múi giờ khi kiểm ngưỡng FMD (`utcOffsetMinutes`); FE hiển thị nhiều bữa cùng loại và nút áp mẫu.
 - Chi tiết, việc cần làm sau khi pull và phần còn thiếu: xem `TEAM_FIX_NOTES.md`.
+
+
+---
+
+## 11. Bổ sung đợt 4 (16/11/2026): hoàn tất phần còn thiếu của Kiệt, kèm lỗi email tìm thấy khi kiểm tra
+
+Kiểm chứng: `node docs/tests/e2e-new-apis.js` (42), `e2e-meals-fmd-notifications.js` (45), `e2e-habits-templates.js` (34), **`e2e-jobs-email.js` (16, mới)** đều PASS = **137 kiểm tra API**; thêm **17 test hàm cho FE** (`npm test` trong `src/Clients/web-app`, dùng `node --test`, không cần cài gói mới).
+
+### Kiệt: đã bổ sung
+| # | Việc | Kết quả |
+|---|---|---|
+| E1 | **Test FE tự động** | `tests/*.test.js`: giải mã JWT/phiên đăng nhập, đăng nhập (sai mật khẩu, backend sập → demo, đăng ký không gửi role), thói quen cục bộ, 5 chế độ nhịn ăn và enum 14:10, kcal FMD 1100/780/760/760/780. Chạy: `npm test` |
+| E2 | **Thêm loại thói quen** | `habit_logs` có `sleep_minutes`, `mindful_minutes` (migration `AddHabitSleepMindful`); mục tiêu ngủ 480 phút, thiền 10 phút; FE có thẻ Giấc ngủ và Thiền, thư giãn |
+| E3 | **Streak thói quen** | `GET /api/habits/user/{id}/streak?date=`: một ngày "đạt" khi đủ nước 2000 ml và vận động 30 phút; hôm nay chưa đạt vẫn giữ chuỗi hôm qua; FE hiện "Chuỗi đạt mục tiêu: N ngày" |
+| E4 | **JobService (Hangfire) đã chạy lại** | 3 recurring job đăng ký đúng; `fasting-check` gửi nhắc và **không gửi trùng** khi chạy lần 2; `fmd-check` chuyển chu kỳ sang ngày kế tiếp |
+| E5 | **Email qua Mailpit đã kiểm thật** | Email nhắc nhịn ăn, cảnh báo FMD, xác nhận đặt lịch, lời khuyên đều tới đúng hộp thư người dùng |
+
+### Lỗi nặng tìm thấy khi kiểm tra email (đã sửa)
+Ba loại email của Notification (cảnh báo FMD, xác nhận đặt lịch, lời khuyên) **luôn gửi tới `user@example.com`** (địa chỉ viết cứng trong `RabbitMqNotificationConsumer`), nên người dùng thật không bao giờ nhận được. Nội dung email FMD còn ghi định mức cũ 725 kcal.
+- Sự kiện `FmdCycleAlert`, `AdviceSent`, `ConsultationBooked` có thêm `RecipientEmail` (mặc định null, tương thích ngược).
+- **DietFasting:** email lấy từ JWT khi ghi/sửa bữa ăn (client không thể gửi email vào body).
+- **Consultation:** lưu `UserEmail` (từ JWT) trên `consultation_sessions` lúc đặt lịch (migration `AddSessionUserEmail`) để sự kiện lời khuyên có địa chỉ.
+- **Notification:** dùng `RecipientEmail`; nếu không có địa chỉ thì chỉ ghi thông báo trong ứng dụng (kênh InApp), không gửi email giả. Nội dung email FMD ghi 1100/780/760/760/780 kcal.
+
+**Sau khi pull:** `dotnet ef database update` cho `diet_db` (AddHabitSleepMindful) và `consultation_db` (AddSessionUserEmail). Lưu ý `dotnet ef database update --no-build` sau khi vừa `migrations add` sẽ không áp dụng migration mới (chưa được build); bỏ `--no-build`.
+
+### Còn thiếu sau đợt này
+- **Kiệt:** test giao diện tự động (Playwright) và unit test backend (xUnit); Landing chưa so pixel với Figma (cần bản thiết kế chi tiết).
+- **Quốc:** phân trang và xóa thông báo; thông báo cho sự kiện tạm dừng fasting.
+- **Khôi:** xác nhận, hủy lịch vẫn chưa phát sự kiện/email; lịch riêng từng bác sĩ.
+- **Khoa:** như mục 1 (băm mật khẩu, Admin seed, đổi họ tên, Google).
+- Email nhắc nhịn ăn của phiên không có email trong JWT vẫn rơi về `user@example.com` (`FastingReminderService`); nên bỏ gửi khi không có địa chỉ.

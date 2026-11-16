@@ -84,7 +84,7 @@ public class MealService : IMealService
                 if (_eventBus != null)
                 {
                     await _eventBus.PublishAsync(new FmdCycleAlertIntegrationEvent(
-                        activeFmd.Id, activeFmd.UserId, activeFmd.CurrentDay, reason));
+                        activeFmd.Id, activeFmd.UserId, activeFmd.CurrentDay, reason, dto.NotificationEmail));
                 }
             }
         }
@@ -134,7 +134,7 @@ public class MealService : IMealService
         return await LogMealAsync(create);
     }
 
-    public async Task<MealLogResponseDto> UpdateMealAsync(Guid mealId, Guid requesterUserId, bool isAdmin, UpdateMealLogDto dto)
+    public async Task<MealLogResponseDto> UpdateMealAsync(Guid mealId, Guid requesterUserId, bool isAdmin, UpdateMealLogDto dto, string? notificationEmail = null)
     {
         if (dto.FoodItems == null || dto.FoodItems.Count == 0)
             throw new BadRequestException("Bữa ăn phải có ít nhất một món.");
@@ -159,7 +159,7 @@ public class MealService : IMealService
                 var reason = $"Day {activeFmd.CurrentDay} FMD Calorie Limit Exceeded! Projected: {projected:F0} kcal vs Threshold: {limit:F0} kcal.";
                 meal.MarkThresholdExceeded(reason);
                 if (_eventBus != null)
-                    await _eventBus.PublishAsync(new FmdCycleAlertIntegrationEvent(activeFmd.Id, activeFmd.UserId, activeFmd.CurrentDay, reason));
+                    await _eventBus.PublishAsync(new FmdCycleAlertIntegrationEvent(activeFmd.Id, activeFmd.UserId, activeFmd.CurrentDay, reason, notificationEmail));
             }
         }
 
@@ -573,6 +573,8 @@ public class HabitService : IHabitService
 {
     public const int WaterGoalMl = 2000;
     public const int MovementGoalMinutes = 30;
+    public const int SleepGoalMinutes = 480;
+    public const int MindfulGoalMinutes = 10;
 
     private readonly IHabitLogRepository _habitRepository;
     private readonly IUnitOfWork _unitOfWork;
@@ -584,7 +586,8 @@ public class HabitService : IHabitService
     }
 
     private static HabitDayDto ToDto(DateOnly date, HabitLog? h) =>
-        new(date, h?.WaterMl ?? 0, h?.MovementMinutes ?? 0, WaterGoalMl, MovementGoalMinutes);
+        new(date, h?.WaterMl ?? 0, h?.MovementMinutes ?? 0, WaterGoalMl, MovementGoalMinutes,
+            h?.SleepMinutes ?? 0, h?.MindfulMinutes ?? 0, SleepGoalMinutes, MindfulGoalMinutes);
 
     public async Task<HabitDayDto> GetDayAsync(Guid userId, DateOnly date)
         => ToDto(date, await _habitRepository.GetByUserAndDateAsync(userId, date));
@@ -593,7 +596,7 @@ public class HabitService : IHabitService
     {
         var existing = await _habitRepository.GetByUserAndDateAsync(userId, date);
         var log = existing ?? HabitLog.Create(userId, date);
-        log.Set(dto.WaterMl, dto.MovementMinutes);
+        log.Set(dto.WaterMl, dto.MovementMinutes, dto.SleepMinutes, dto.MindfulMinutes);
         if (existing == null) await _habitRepository.CreateAsync(log); else await _habitRepository.UpdateAsync(log);
         await _unitOfWork.SaveChangesAsync();
         return ToDto(date, log);
@@ -603,10 +606,35 @@ public class HabitService : IHabitService
     {
         var existing = await _habitRepository.GetByUserAndDateAsync(userId, date);
         var log = existing ?? HabitLog.Create(userId, date);
-        log.Add(dto.WaterMl, dto.MovementMinutes);
+        log.Add(dto.WaterMl, dto.MovementMinutes, dto.SleepMinutes, dto.MindfulMinutes);
         if (existing == null) await _habitRepository.CreateAsync(log); else await _habitRepository.UpdateAsync(log);
         await _unitOfWork.SaveChangesAsync();
         return ToDto(date, log);
+    }
+
+    /// <summary>Một ngày "đạt" khi uống đủ nước và vận động đủ phút. Chuỗi hiện tại còn hiệu lực nếu hôm nay hoặc hôm qua đạt.</summary>
+    public async Task<HabitStreakDto> GetStreakAsync(Guid userId, DateOnly today)
+    {
+        var logs = await _habitRepository.GetRangeAsync(userId, today.AddDays(-400), today);
+        var met = logs.Where(l => l.WaterMl >= WaterGoalMl && l.MovementMinutes >= MovementGoalMinutes)
+                      .Select(l => l.LogDate).Distinct().OrderBy(d => d).ToList();
+
+        int longest = 0, run = 0;
+        DateOnly? prev = null;
+        foreach (var d in met)
+        {
+            run = prev.HasValue && d == prev.Value.AddDays(1) ? run + 1 : 1;
+            longest = Math.Max(longest, run);
+            prev = d;
+        }
+
+        var current = 0;
+        if (met.Count > 0 && met[^1] >= today.AddDays(-1))
+        {
+            current = 1;
+            for (var i = met.Count - 1; i > 0 && met[i - 1] == met[i].AddDays(-1); i--) current++;
+        }
+        return new HabitStreakDto(current, longest, WaterGoalMl, MovementGoalMinutes);
     }
 
     public async Task<List<HabitDayDto>> GetRangeAsync(Guid userId, DateOnly from, DateOnly to)

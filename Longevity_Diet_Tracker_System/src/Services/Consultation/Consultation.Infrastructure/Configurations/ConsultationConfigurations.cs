@@ -23,6 +23,7 @@ public class ConsultationSessionConfiguration : IEntityTypeConfiguration<Consult
     {
         builder.ToTable("consultation_sessions");
         builder.HasKey(s => s.Id);
+        builder.Property(s => s.UserEmail).HasMaxLength(256);
         builder.HasIndex(s => new { s.NutritionistId, s.ScheduledAtUtc });
 
         builder.HasOne(s => s.Nutritionist)
