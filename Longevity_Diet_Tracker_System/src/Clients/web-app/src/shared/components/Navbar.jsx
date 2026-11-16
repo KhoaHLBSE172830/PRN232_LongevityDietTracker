@@ -15,6 +15,8 @@ import { fastingApi } from '../../features/fasting/fastingApi';
 
 export default function Navbar({ 
   onOpenAddMeal, 
+  portal = 'user',
+  roleLabel = null,
   onBackToLanding,
   onLogout,
   onNavigate,
@@ -30,9 +32,13 @@ export default function Navbar({
 
   useEffect(() => {
     let alive = true;
-    fmdApi.getUserNotifications(user.id).then((d) => alive && Array.isArray(d) && setNotifs(d));
+    const load = () => fmdApi.getUserNotifications(user.id).then((d) => alive && Array.isArray(d) && setNotifs(d));
+    load();
+    // Tự làm mới mỗi 10 giây để chuông hiện thông báo mới (cảnh báo đến qua RabbitMQ sau vài giây).
+    const timer = setInterval(load, 10000);
     return () => {
       alive = false;
+      clearInterval(timer);
     };
   }, [user.id]);
 
@@ -93,6 +99,8 @@ export default function Navbar({
         {/* RIGHT: QUICK ACTIONS */}
         <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
 
+          {portal === 'user' ? (
+            <>
           {/* HEALTH STREAK */}
           <div className="hidden items-center gap-2.5 rounded-xl border border-[#F0E5D2] bg-[#FBF7EF] px-3.5 py-2 sm:flex">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#F7EBD5]">
@@ -134,6 +142,13 @@ export default function Navbar({
             <span className="hidden sm:inline">Ghi nhận bữa ăn</span>
             <span className="sm:hidden">Thêm</span>
           </button>
+
+            </>
+          ) : (
+            <span className="hidden rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-800 sm:inline">
+              {roleLabel}
+            </span>
+          )}
 
           {/* CHUÔNG THÔNG BÁO: huy hiệu = số thông báo chưa đọc (BE lưu readAtUtc) */}
           <div className="relative" ref={bellRef}>
@@ -177,7 +192,7 @@ export default function Navbar({
             )}
           </div>
 
-          {onNavigate && (
+          {onNavigate && portal === 'user' && (
             <button type="button" onClick={() => onNavigate('profile')} title="Hồ sơ" aria-label="Hồ sơ" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#DCE6DC] bg-[#F8FAF8] text-[#55725A] transition-all hover:border-[#B7D2BA] hover:bg-white hover:text-[#28734D] active:scale-95">
               <UserCircle2 size={18} strokeWidth={1.8} />
             </button>
