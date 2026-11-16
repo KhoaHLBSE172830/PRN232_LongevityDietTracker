@@ -92,7 +92,7 @@ public class ConsultationService : IConsultationService
         if (_eventBus != null)
         {
             await _eventBus.PublishAsync(new ConsultationBookedIntegrationEvent(
-                session.Id, session.UserId, session.NutritionistId, session.ScheduledAtUtc, session.UserEmail));
+                session.Id, session.UserId, session.NutritionistId, session.ScheduledAtUtc, session.UserEmail, nutritionist.UserId));
         }
 
         return new ConsultationSessionDto(
