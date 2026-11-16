@@ -20,6 +20,11 @@ public class UsersController : ControllerBase
         _userService = userService;
     }
 
+    private Guid CurrentUserId =>
+        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id)
+            ? id
+            : throw new UnauthorizedException("Token does not contain a valid user id.");
+
     // Chỉ chủ tài khoản hoặc Admin được xem/sửa hồ sơ.
     private void EnsureOwnerOrAdmin(Guid id)
     {
@@ -27,6 +32,33 @@ public class UsersController : ControllerBase
         if (User.IsInRole("Admin")) return;
         if (!Guid.TryParse(claim, out var callerId) || callerId != id)
             throw new ForbiddenException("Bạn chỉ được truy cập hồ sơ của chính mình.");
+    }
+
+    /// <summary>Admin liệt kê danh sách người dùng hệ thống (phân trang, tìm kiếm, lọc theo vai trò và trạng thái hoạt động).</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpGet]
+    public async Task<IActionResult> GetUsers([FromQuery] UserQueryParameters query)
+    {
+        var result = await _userService.GetUsersPagedAsync(query);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Admin xem thống kê tổng quan (Dashboard / Management) người dùng và hồ sơ sống khỏe Blue Zones.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetStats()
+    {
+        var stats = await _userService.GetAdminStatsAsync();
+        return SuccessResp.Ok(stats);
+    }
+
+    /// <summary>Admin khóa hoặc mở khóa tài khoản người dùng. Khi khóa tài khoản, toàn bộ Refresh Token sẽ bị thu hồi ngay lập tức.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{id:guid}/status")]
+    public async Task<IActionResult> SetUserStatus(Guid id, [FromBody] SetUserStatusRequestDto dto)
+    {
+        var result = await _userService.SetUserStatusAsync(CurrentUserId, id, dto);
+        return SuccessResp.Ok(result, result.Message);
     }
 
     [HttpGet("{id:guid}/profile")]

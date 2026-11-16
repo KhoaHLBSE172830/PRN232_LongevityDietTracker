@@ -1,7 +1,9 @@
 using System.Linq.Expressions;
 using BuildingBlocks.Common.Repositories;
+using Identity.Application.DTOs;
 using Identity.Application.Repositories;
 using Identity.Domain.Entities;
+using Identity.Domain.Enums;
 using Identity.Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -216,6 +218,127 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     {
         return await _dbSet.Include(u => u.Profile)
                            .FirstOrDefaultAsync(u => u.Id == userId);
+    }
+
+    public async Task<User?> GetWithRefreshTokensAsync(Guid userId)
+    {
+        return await _dbSet.Include(u => u.RefreshTokens)
+                           .Include(u => u.Profile)
+                           .FirstOrDefaultAsync(u => u.Id == userId);
+    }
+
+    public async Task<(List<User> Users, int TotalCount)> GetUsersPagedAsync(
+        int pageNumber,
+        int pageSize,
+        string? searchTerm = null,
+        UserRole? role = null,
+        bool? isActive = null)
+    {
+        var query = _dbSet.AsNoTracking()
+                          .Include(u => u.Profile)
+                          .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim().ToLower();
+            query = query.Where(u => u.Email.ToLower().Contains(term) || u.FullName.ToLower().Contains(term));
+        }
+
+        if (role.HasValue)
+        {
+            query = query.Where(u => u.Role == role.Value);
+        }
+
+        if (isActive.HasValue)
+        {
+            query = query.Where(u => u.IsActive == isActive.Value);
+        }
+
+        var totalCount = await query.CountAsync();
+
+        var items = await query.OrderByDescending(u => u.CreatedAt)
+                               .Skip((pageNumber - 1) * pageSize)
+                               .Take(pageSize)
+                               .ToListAsync();
+
+        return (items, totalCount);
+    }
+
+    public async Task<AdminDashboardStatsDto> GetDashboardStatsAsync()
+    {
+        var now = DateTime.UtcNow;
+        var todayUtc = now.Date;
+        var sevenDaysAgo = now.AddDays(-7);
+        var thirtyDaysAgo = now.AddDays(-30);
+
+        var totalUsers = await _dbSet.CountAsync();
+        var activeUsers = await _dbSet.CountAsync(u => u.IsActive);
+        var lockedUsers = totalUsers - activeUsers;
+        var emailVerifiedUsers = await _dbSet.CountAsync(u => u.IsEmailVerified);
+        var googleLinkedUsers = await _dbSet.CountAsync(u => !string.IsNullOrEmpty(u.GoogleId));
+
+        var regularUsers = await _dbSet.CountAsync(u => u.Role == UserRole.User);
+        var nutritionists = await _dbSet.CountAsync(u => u.Role == UserRole.Nutritionist);
+        var admins = await _dbSet.CountAsync(u => u.Role == UserRole.Admin);
+
+        var newToday = await _dbSet.CountAsync(u => u.CreatedAt >= todayUtc);
+        var newWeek = await _dbSet.CountAsync(u => u.CreatedAt >= sevenDaysAgo);
+        var newMonth = await _dbSet.CountAsync(u => u.CreatedAt >= thirtyDaysAgo);
+
+        // Profile statistics
+        var profiles = await _context.UserProfiles.AsNoTracking().ToListAsync();
+        var completedProfiles = profiles.Count;
+        var completionRate = totalUsers > 0 ? Math.Round((double)completedProfiles / totalUsers * 100, 1) : 0.0;
+
+        var caloriesList = profiles.Where(p => p.DailyCalorieTarget.HasValue && p.DailyCalorieTarget.Value > 0)
+                                   .Select(p => (double)p.DailyCalorieTarget!.Value)
+                                   .ToList();
+        double? avgCalories = caloriesList.Count > 0 ? Math.Round(caloriesList.Average(), 1) : null;
+
+        var heightList = profiles.Where(p => p.HeightCm.HasValue && p.HeightCm.Value > 0)
+                                 .Select(p => p.HeightCm!.Value)
+                                 .ToList();
+        double? avgHeight = heightList.Count > 0 ? Math.Round(heightList.Average(), 1) : null;
+
+        var weightList = profiles.Where(p => p.CurrentWeightKg.HasValue && p.CurrentWeightKg.Value > 0)
+                                 .Select(p => p.CurrentWeightKg!.Value)
+                                 .ToList();
+        double? avgWeight = weightList.Count > 0 ? Math.Round(weightList.Average(), 1) : null;
+
+        var dietaryPreferences = profiles
+            .Where(p => !string.IsNullOrWhiteSpace(p.DietaryPreference))
+            .GroupBy(p => p.DietaryPreference!)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var fastingTypes = profiles
+            .Where(p => !string.IsNullOrWhiteSpace(p.PreferredFastingType))
+            .GroupBy(p => p.PreferredFastingType!)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var waterReminders = profiles.Count(p => p.WaterReminderEnabled);
+        var eveningReminders = profiles.Count(p => p.EveningReminderEnabled);
+
+        var activeRefreshTokens = await _context.RefreshTokens.CountAsync(r => !r.IsRevoked && r.ExpiresAtUtc > now);
+
+        return new AdminDashboardStatsDto(
+            UserStats: new UserOverviewStatsDto(totalUsers, activeUsers, lockedUsers, emailVerifiedUsers, googleLinkedUsers),
+            RoleStats: new RoleBreakdownStatsDto(regularUsers, nutritionists, admins),
+            RegistrationTrends: new RegistrationTrendsDto(newToday, newWeek, newMonth),
+            LongevityProfileStats: new LongevityProfileStatsDto(
+                completedProfiles,
+                completionRate,
+                avgCalories,
+                avgHeight,
+                avgWeight,
+                dietaryPreferences,
+                fastingTypes,
+                waterReminders,
+                eveningReminders),
+            SystemSummary: new SystemHealthSummaryDto(
+                now,
+                Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production",
+                activeRefreshTokens)
+        );
     }
 }
 

@@ -168,6 +168,9 @@ public class AuthService : IAuthService
         if (user == null)
             throw new UnauthorizedException("Invalid or revoked refresh token.");
 
+        if (!user.IsActive)
+            throw new ForbiddenException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ quản trị viên.");
+
         var activeToken = user.RefreshTokens.FirstOrDefault(r => r.Token == request.RefreshToken && r.IsActive);
         if (activeToken == null)
             throw new UnauthorizedException("Refresh token is expired or revoked.");
@@ -279,6 +282,86 @@ public class UserService : IUserService
         await _unitOfWork.SaveChangesAsync();
 
         return profileDto;
+    }
+
+    public async Task<PagedResultDto<UserSummaryDto>> GetUsersPagedAsync(UserQueryParameters query)
+    {
+        var (users, totalCount) = await _userRepository.GetUsersPagedAsync(
+            query.PageNumber,
+            query.PageSize,
+            query.SearchTerm,
+            query.Role,
+            query.IsActive);
+
+        var summaries = users.Select(u => new UserSummaryDto(
+            u.Id,
+            u.Email,
+            u.FullName,
+            u.Role.ToString(),
+            u.IsActive,
+            u.IsEmailVerified,
+            GoogleLinked: !string.IsNullOrEmpty(u.GoogleId),
+            u.CreatedAt,
+            u.UpdatedAt,
+            HasProfile: u.Profile != null,
+            DietaryPreference: u.Profile?.DietaryPreference,
+            PreferredFastingType: u.Profile?.PreferredFastingType,
+            DailyCalorieTarget: u.Profile?.DailyCalorieTarget
+        )).ToList();
+
+        return PagedResultDto<UserSummaryDto>.Create(summaries, totalCount, query.PageNumber, query.PageSize);
+    }
+
+    public async Task<UserStatusResponseDto> SetUserStatusAsync(Guid currentAdminId, Guid targetUserId, SetUserStatusRequestDto request)
+    {
+        // 1. Business Invariant: Admin cannot lock their own active account
+        if (currentAdminId == targetUserId && !request.IsActive)
+        {
+            throw new BadRequestException("Bạn không thể tự khóa tài khoản quản trị của chính mình.");
+        }
+
+        var user = await _userRepository.GetWithRefreshTokensAsync(targetUserId);
+        if (user == null)
+            throw new UserNotFoundException(targetUserId.ToString());
+
+        // 2. Business Invariant: Default Super Admin cannot be locked by other admins
+        if (user.Email.Equals("admin@longevitytracker.com", StringComparison.OrdinalIgnoreCase) && !request.IsActive)
+        {
+            throw new BadRequestException("Không thể khóa tài khoản quản trị viên hệ thống mặc định (Super Admin).");
+        }
+
+        user.IsActive = request.IsActive;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // 3. Security Rule: If locking/deactivating user, invalidate all active refresh tokens immediately
+        if (!request.IsActive)
+        {
+            foreach (var token in user.RefreshTokens.Where(r => !r.IsRevoked))
+            {
+                token.IsRevoked = true;
+                token.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        var message = request.IsActive 
+            ? $"Tài khoản {user.Email} đã được mở khóa thành công."
+            : $"Tài khoản {user.Email} đã bị khóa. Toàn bộ phiên đăng nhập đã được thu hồi.";
+
+        return new UserStatusResponseDto(
+            user.Id,
+            user.Email,
+            user.FullName,
+            user.IsActive,
+            user.UpdatedAt ?? DateTime.UtcNow,
+            message
+        );
+    }
+
+    public async Task<AdminDashboardStatsDto> GetAdminStatsAsync()
+    {
+        return await _userRepository.GetDashboardStatsAsync();
     }
 }
 
