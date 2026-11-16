@@ -22,6 +22,7 @@ import AddMealModal from './AddMealModal';
 import { useCurrentUser, isDemoMode } from '../../shared/services/userStore';
 import { Banner } from '../../shared/components/ui';
 import { mealsApi, localDateKey } from './mealsApi';
+import ConfirmModal from '../../shared/components/ConfirmModal';
 
 // Danh sách châm ngôn dinh dưỡng trường thọ
 const LONGEVITY_QUOTES = [
@@ -102,14 +103,22 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
     }
   };
 
-  const handleDeleteMeal = async (meal) => {
-    if (!window.confirm('Xóa bữa ăn này khỏi nhật ký?')) return;
+  const [deletingMeal, setDeletingMeal] = useState(null);
+
+  const handleDeleteMeal = (meal) => {
+    setDeletingMeal(meal);
+  };
+
+  const confirmDeleteMeal = async () => {
+    if (!deletingMeal) return;
     try {
-      await mealsApi.deleteMeal(meal.id);
-      setMeals((prev) => prev.filter((m) => m.id !== meal.id));
-      showToast({ type: 'success', title: 'Đã xóa bữa ăn', message: `${meal.mealTypeName || 'Bữa ăn'} đã được xóa khỏi nhật ký.` });
+      await mealsApi.deleteMeal(deletingMeal.id);
+      setMeals((prev) => prev.filter((m) => m.id !== deletingMeal.id));
+      showToast({ type: 'success', title: 'Đã xóa bữa ăn', message: `${deletingMeal.mealTypeName || 'Bữa ăn'} đã được xóa khỏi nhật ký.` });
     } catch (err) {
       showToast({ type: 'error', title: 'Không xóa được', message: err.message });
+    } finally {
+      setDeletingMeal(null);
     }
   };
 
@@ -523,6 +532,17 @@ export default function MealsView({ isAddModalOpen, onOpenAddModal, onCloseAddMo
         date={date}
         editingMeal={editingMeal}
         onMealAdded={handleMealAdded}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletingMeal}
+        onClose={() => setDeletingMeal(null)}
+        onConfirm={confirmDeleteMeal}
+        title="Xóa Bữa Ăn"
+        message={`Bạn có chắc chắn muốn xóa ${deletingMeal?.mealTypeName || 'bữa ăn này'} khỏi nhật ký theo dõi?`}
+        confirmText="Xóa bữa ăn"
+        cancelText="Hủy bỏ"
+        danger={true}
       />
     </div>
   );
