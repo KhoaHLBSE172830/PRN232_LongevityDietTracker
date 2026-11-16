@@ -184,3 +184,21 @@ Kết luận: các thao tác lõi của bác sĩ (xem lịch, xác nhận, hủy
 - Test mới `docs/tests/e2e-booking-sync.js` (24 kiểm tra): với từng bác sĩ, hội viên đặt lịch thì đúng bác sĩ đó thấy, bác sĩ khác bị 403, bác sĩ có thông báo, xác nhận xong hội viên thấy trạng thái mới.
 
 **Còn thiếu (P3):** Admin gắn hồ sơ chuyên gia với tài khoản ngay trên giao diện; chặn đặt lịch với bác sĩ chưa gắn tài khoản. Hiện bác sĩ mới (tạo ngoài seed) phải gắn bằng SQL.
+
+
+---
+
+## 14. API Admin mới của Identity (Khoa) đã nối vào giao diện (16/11/2026)
+
+Khoa đã thêm vào Identity: liệt kê người dùng có phân trang, khóa/mở khóa tài khoản, thống kê. Qua Gateway gọi được ở cả `/api/users...` và `/api/admin/...`; FE dùng nhóm `/api/users` (cùng prefix đã có route).
+
+| API | Quyền | Đã nối vào |
+|---|---|---|
+| `GET /api/users?pageNumber&pageSize&searchTerm&role&isActive` | Admin | Trang **Người dùng và phân quyền** (bảng, tìm kiếm có debounce, lọc vai trò và trạng thái, phân trang); ô chọn người nhận ở **Thông báo hệ thống** |
+| `PUT /api/users/{id}/status` `{isActive, reason}` | Admin; không tự khóa mình (400); khóa thì thu hồi phiên và chặn đăng nhập (403) | Nút **Khóa / Mở khóa** kèm lý do trong trang Người dùng |
+| `GET /api/users/stats` | Admin | **Tổng quan quản trị**: tổng, đang hoạt động, đã khóa, email xác thực; theo vai trò; đăng ký 1, 7, 30 ngày; hồ sơ sức khỏe (hoàn thiện, kcal trung bình, nhịn ăn ưa thích) |
+| `PUT /api/users/{id}/role` (đã có) | Admin | Chọn vai trò ngay trên từng dòng rồi **Lưu** (thay cho ô nhập GUID cũ) |
+
+Việc cần làm cho bản cũ ở mục 6 của kế hoạch này: dòng "Người dùng và phân quyền" và "GET /api/users" **đã xong**; còn thiếu: sửa/xóa mẫu bữa ăn, gắn hồ sơ chuyên gia với tài khoản, giám sát JobService.
+
+Kiểm thử: `tests/adminApi.test.js` thêm 3 test → `npm test` **35/35**; script mới `docs/tests/e2e-admin-users.js` **19/19**; 5 script e2e cũ vẫn đạt (42 + 45 + 34 + 16 + 24); đã thao tác trên trình duyệt bằng admin (tìm kiếm, lọc, khóa và mở khóa, đổi role và trả lại, nút tự khóa bị vô hiệu, chọn người nhận thông báo).
