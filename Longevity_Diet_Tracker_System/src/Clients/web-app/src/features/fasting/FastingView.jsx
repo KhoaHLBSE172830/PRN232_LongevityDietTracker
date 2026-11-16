@@ -534,7 +534,7 @@ export default function FastingView() {
           </div>
           <h4 className="font-extrabold text-slate-800 text-sm">Đồng Bộ Hồ Sơ Cho Chuyên Gia</h4>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Số giờ nhịn ăn tổng hợp được chuyên gia dinh dưỡng xem trong buổi tư vấn (qua gRPC giữa các dịch vụ).
+            Số giờ nhịn ăn tổng hợp được chuyên gia dinh dưỡng đồng hành và phân tích trong buổi tư vấn.
           </p>
         </div>
 

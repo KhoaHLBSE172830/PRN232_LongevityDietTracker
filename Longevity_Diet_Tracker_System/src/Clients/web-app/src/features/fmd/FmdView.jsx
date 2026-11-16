@@ -4,9 +4,11 @@ import { Leaf, ShieldAlert, Mail, CheckCircle2, RefreshCw, Bell } from 'lucide-r
 import { fmdApi, DEFAULT_FMD_RULES, kcalForDay } from './fmdApi';
 import { Banner } from '../../shared/components/ui';
 import { DEMO_USER } from '../../shared/services/apiClient';
+import ConfirmModal from '../../shared/components/ConfirmModal';
 
 export default function FmdView() {
   const [activeCycle, setActiveCycle] = useState(null);
+  const [isConfirmCancelOpen, setIsConfirmCancelOpen] = useState(false);
   const [rules, setRules] = useState(DEFAULT_FMD_RULES);
   const [notifications, setNotifications] = useState([]);
   const [preferences, setPreferences] = useState({
@@ -58,7 +60,7 @@ export default function FmdView() {
   };
 
   const handleCancelCycle = async () => {
-    if (!activeCycle || !window.confirm('Hủy chu kỳ FMD đang chạy?')) return;
+    if (!activeCycle) return;
     setLoading(true);
     setErrorMessage('');
     try {
@@ -110,7 +112,7 @@ export default function FmdView() {
 
         {activeCycle && (
           <button
-            onClick={handleCancelCycle}
+            onClick={() => setIsConfirmCancelOpen(true)}
             disabled={loading}
             className="flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all"
           >
@@ -215,11 +217,11 @@ export default function FmdView() {
           </div>
           <h4 className="font-extrabold text-slate-800 text-sm">Kiểm Soát Calo Tự Động</h4>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Hệ thống tự động phát hiện nếu người dùng ghi nhận món ăn vượt quá định mức kcal của từng ngày FMD và gửi thông báo nhắc nhở tức thì qua RabbitMQ & SMTP Mailpit.
+            Hệ thống tự động theo dõi khi bạn ghi nhận bữa ăn và gửi thông báo nhắc nhở kịp thời nếu mức năng lượng vượt quá định mức của ngày FMD tương ứng.
           </p>
           <div className="pt-2 border-t border-slate-100 text-[11px] font-semibold text-teal-700 flex items-center justify-between">
             <span className="flex items-center gap-1">
-              <span>Trạng thái: Đã kết nối API FMD & RabbitMQ Alert</span>
+              <span>Trạng thái: Đang theo dõi định mức tự động</span>
               <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
             </span>
             <button
@@ -248,7 +250,7 @@ export default function FmdView() {
                 onChange={() => handleTogglePreference('emailNotificationsEnabled')}
                 className="accent-teal-600"
               />
-              <span>Nhận Email SMTP</span>
+              <span>Thông báo qua Email</span>
             </label>
             <label className="inline-flex items-center gap-1.5 cursor-pointer text-slate-700">
               <input
@@ -307,6 +309,17 @@ export default function FmdView() {
           🌿 <strong>Giao thức FMD (Fasting Mimicking Diet):</strong> Được nghiên cứu bởi Viện Tuổi Thọ (Đại học Nam California - USC), chu kỳ giúp kích hoạt cơ chế tự thực bào và tái tạo tế bào gốc tự nhiên cho cơ thể.
         </p>
       </div>
+
+      <ConfirmModal
+        isOpen={isConfirmCancelOpen}
+        onClose={() => setIsConfirmCancelOpen(false)}
+        onConfirm={handleCancelCycle}
+        title="Hủy Chu Kỳ FMD"
+        message="Bạn có chắc chắn muốn dừng chu kỳ FMD đang hoạt động? Lộ trình thanh lọc này sẽ kết thúc và lưu lại lịch sử."
+        confirmText="Xác nhận dừng"
+        cancelText="Tiếp tục chu kỳ"
+        danger={true}
+      />
     </div>
   );
 }

@@ -110,14 +110,14 @@ export function PatientHealthPanel({ userId }) {
         setMs(Math.round(performance.now() - t0));
         setData(d);
       })
-      .catch((err) => alive && setError(err.message || 'Không thể đồng bộ dữ liệu qua gRPC.'))
+      .catch((err) => alive && setError(err.message || 'Không thể tải dữ liệu hồ sơ sức khỏe.'))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
   }, [userId]);
 
-  if (loading) return <p className="text-xs text-slate-400">Đang gọi gRPC sang DietFasting...</p>;
+  if (loading) return <p className="text-xs text-slate-400">Đang tải hồ sơ sức khỏe hội viên...</p>;
   if (error) return <Banner tone="offline">{error}</Banner>;
   if (!data) return null;
 
@@ -126,7 +126,6 @@ export function PatientHealthPanel({ userId }) {
   const m = data.fmdCycleStatus || {};
   return (
     <div className="space-y-3 text-xs">
-      {ms != null && <p className="text-[11px] font-bold text-emerald-700">Đồng bộ qua gRPC trong {ms} ms</p>}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="font-extrabold text-slate-900">Nhịn ăn</p>
