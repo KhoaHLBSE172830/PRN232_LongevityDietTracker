@@ -1,10 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using BuildingBlocks.Common.Exceptions;
 using BuildingBlocks.Common.Repositories;
+using BuildingBlocks.Messaging.Abstractions;
+using BuildingBlocks.Messaging.Events;
 using Identity.Application.DTOs;
+using Identity.Application.Security;
 using Identity.Domain.Entities;
 using Identity.Domain.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace Identity.Application.Services;
 
@@ -14,28 +19,49 @@ public class AuthService : IAuthService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IJwtService _jwtService;
     private readonly IGoogleAuthService _googleAuthService;
+    private readonly IPasswordHasher _passwordHasher;
+    private readonly IEventBus? _eventBus;
+    private readonly ILogger<AuthService>? _logger;
 
     public AuthService(
         Repositories.IUserRepository userRepository,
         IUnitOfWork unitOfWork,
         IJwtService jwtService,
-        IGoogleAuthService googleAuthService)
+        IGoogleAuthService googleAuthService,
+        IPasswordHasher passwordHasher,
+        IEventBus? eventBus = null,
+        ILogger<AuthService>? logger = null)
     {
         _userRepository = userRepository;
         _unitOfWork = unitOfWork;
         _jwtService = jwtService;
         _googleAuthService = googleAuthService;
+        _passwordHasher = passwordHasher;
+        _eventBus = eventBus;
+        _logger = logger;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterRequestDto request)
     {
-        var existing = await _userRepository.GetByEmailAsync(request.Email.ToLowerInvariant());
+        if (string.IsNullOrWhiteSpace(request.Email) || !Regex.IsMatch(request.Email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+            throw new BadRequestException("Địa chỉ email không đúng định dạng hợp lệ.");
+
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 6)
+            throw new BadRequestException("Mật khẩu phải có độ dài tối thiểu từ 6 ký tự trở lên.");
+
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            throw new BadRequestException("Họ và tên không được để trống.");
+
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var existing = await _userRepository.GetByEmailAsync(normalizedEmail);
         if (existing != null)
             throw new EmailAlreadyExistsException(request.Email);
 
-        var user = new User(request.Email.ToLowerInvariant(), request.FullName, Domain.Enums.UserRole.User)
+        var user = new User(normalizedEmail, request.FullName.Trim(), Domain.Enums.UserRole.User)
         {
-            PasswordHash = HashPassword(request.Password)
+            PasswordHash = _passwordHasher.HashPassword(request.Password),
+            IsActive = true,
+            IsEmailVerified = false
         };
 
         var refreshToken = _jwtService.GenerateRefreshToken(user.Id);
@@ -43,6 +69,23 @@ public class AuthService : IAuthService
 
         await _userRepository.CreateAsync(user);
         await _unitOfWork.SaveChangesAsync();
+
+        // Event-driven publish to RabbitMQ for asynchronous Notification service processing
+        if (_eventBus != null)
+        {
+            try
+            {
+                await _eventBus.PublishAsync(new UserRegisteredIntegrationEvent(
+                    user.Id,
+                    user.Email,
+                    user.FullName,
+                    user.Role.ToString()));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Could not publish UserRegisteredIntegrationEvent for {Email}", user.Email);
+            }
+        }
 
         var accessToken = _jwtService.GenerateAccessToken(user);
 
@@ -58,9 +101,16 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request)
     {
-        var user = await _userRepository.GetByEmailAsync(request.Email.ToLowerInvariant());
-        if (user == null || user.PasswordHash == null || !VerifyPassword(request.Password, user.PasswordHash))
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             throw new InvalidCredentialsException();
+
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+        if (user == null || user.PasswordHash == null || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
+            throw new InvalidCredentialsException();
+
+        if (!user.IsActive)
+            throw new ForbiddenException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ quản trị viên.");
 
         var refreshToken = _jwtService.GenerateRefreshToken(user.Id);
         user.RefreshTokens.Add(refreshToken);
@@ -82,11 +132,16 @@ public class AuthService : IAuthService
     {
         var (email, fullName, googleId) = await _googleAuthService.VerifyGoogleTokenAsync(request.IdToken);
 
-        var user = await _userRepository.GetByEmailAsync(email.ToLowerInvariant());
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var user = await _userRepository.GetByEmailAsync(normalizedEmail);
         if (user == null)
         {
-            user = new User(email.ToLowerInvariant(), fullName, Domain.Enums.UserRole.User, googleId);
+            user = new User(normalizedEmail, fullName, Domain.Enums.UserRole.User, googleId);
             await _userRepository.CreateAsync(user);
+        }
+        else if (!user.IsActive)
+        {
+            throw new ForbiddenException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ quản trị viên.");
         }
 
         var refreshToken = _jwtService.GenerateRefreshToken(user.Id);
@@ -134,18 +189,6 @@ public class AuthService : IAuthService
             accessToken,
             newRefreshToken.Token,
             newRefreshToken.ExpiresAtUtc);
-    }
-
-    private static string HashPassword(string password)
-    {
-        using var sha256 = SHA256.Create();
-        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-        return Convert.ToBase64String(bytes);
-    }
-
-    private static bool VerifyPassword(string password, string hash)
-    {
-        return HashPassword(password) == hash;
     }
 }
 
