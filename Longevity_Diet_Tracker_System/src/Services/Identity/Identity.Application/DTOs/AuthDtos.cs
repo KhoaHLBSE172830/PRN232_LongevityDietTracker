@@ -2,11 +2,13 @@ using Identity.Domain.Enums;
 
 namespace Identity.Application.DTOs;
 
+// Role KHÔNG nhận từ client: đăng ký tự do luôn là User. Admin đổi role qua PUT /api/users/{id}/role.
 public record RegisterRequestDto(
     string Email,
     string Password,
-    string FullName,
-    UserRole Role = UserRole.User);
+    string FullName);
+
+public record UpdateRoleRequestDto(string Role);
 
 public record LoginRequestDto(
     string Email,
@@ -36,5 +38,12 @@ public record UserProfileDto(
     double? CurrentWeightKg,
     double? TargetWeightKg,
     string? DietaryPreference,
-    string? HealthGoals);
+    string? HealthGoals,
+    int? DailyCalorieTarget = null,
+    int? ProteinPercent = null,
+    int? CarbsPercent = null,
+    int? FatPercent = null,
+    string? PreferredFastingType = null,
+    bool? WaterReminderEnabled = null,
+    bool? EveningReminderEnabled = null);
 

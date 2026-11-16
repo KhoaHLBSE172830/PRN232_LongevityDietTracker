@@ -1,0 +1,79 @@
+%% [C3] Component Diagram – Notification Service (Onion Architecture)
+%% Author: Trần Phạm Khánh Quốc (Branch: quoc)
+flowchart LR
+    %% External Actors & Systems (Left - Inbound)
+    GW["YARP API Gateway (:5000 / :7159)<br/>[Reverse Proxy]"]
+    PUB_DIET["DietFasting Service (:5002)<br/>[Publisher: fmd.alert, notification.email]"]
+    PUB_CONSULT["Consultation Service (:5003)<br/>[Publisher: advice.sent, consultation.booked]"]
+    MQ{{"RabbitMQ Broker (:5672)<br/>Exchange: longevity_events_exchange (Topic)<br/>Queue: notification_events_queue"}}
+
+    %% 1. Presentation / API Layer
+    subgraph API["1. Notification.API (Presentation Layer - Port 5004)"]
+        CTRL["NotificationsController<br/>[REST Controller]<br/>POST /api/notifications/send<br/>GET /api/notifications/user/{id}<br/>GET/PUT /api/notifications/preferences/{id}"]
+        MW["ExceptionHandlingMiddleware & ValidationFilter<br/>[Cross-Cutting Pipeline]"]
+    end
+
+    %% 2. Application Layer
+    subgraph APP["2. Notification.Application (Use Case & Contract Layer)"]
+        ISVC["INotificationService<br/>[Service Interface]"]
+        SVC["NotificationService<br/>[Application Service]<br/>Điều phối kiểm tra Idempotency (EventId),<br/>kiểm tra Preference, gửi Email & lưu Log"]
+        IEMAIL["IEmailService<br/>[Port Interface]"]
+        ILOG_REPO["INotificationLogRepository<br/>[Repository Interface]<br/>+ HasEventBeenProcessedAsync(eventId)<br/>+ GetLogsByUserIdAsync(userId)"]
+        IPREF_REPO["INotificationPreferenceRepository<br/>[Repository Interface]<br/>+ GetByUserIdAsync(userId)"]
+        IUOW["IUnitOfWork<br/>[Transaction Interface]"]
+    end
+
+    %% 3. Infrastructure Layer
+    subgraph INFRA["3. Notification.Infrastructure (Adapter & Persistence Layer)"]
+        CONSUMER["RabbitMqNotificationConsumer<br/>[BackgroundService]<br/>Lắng nghe notification.#, fmd.#,<br/>advice.#, consultation.#"]
+        SMTP["SmtpEmailService<br/>[SMTP Adapter]<br/>Soạn & gửi HTML Email qua SmtpClient"]
+        LOG_REPO["NotificationLogRepository<br/>[EF Core Repository]"]
+        PREF_REPO["NotificationPreferenceRepository<br/>[EF Core Repository]"]
+        UOW["UnitOfWork<br/>[EF Core UoW]"]
+        CTX["NotificationDbContext<br/>[EF Core DbContext - snake_case]"]
+    end
+
+    %% 4. Domain Layer
+    subgraph DOM["4. Notification.Domain (Core Rich Domain Layer)"]
+        ENT_LOG["NotificationLog<br/>[Aggregate / Entity]<br/>+ MarkAsSent()<br/>+ MarkAsFailed(error)"]
+        ENT_PREF["NotificationPreference<br/>[Entity]<br/>+ UpdatePreferences(...)"]
+        ENUMS["NotificationStatus (Pending, Sent, Failed)<br/>NotificationChannel (Email, InApp, Push)<br/>[Domain Enums]"]
+    end
+
+    %% External Systems (Right - Outbound)
+    DB[("PostgreSQL (:5432)<br/>Database: notification_db<br/>Tables: notification_logs,<br/>notification_preferences")]
+    MAIL["Mailpit SMTP Server<br/>SMTP :1025 / Web UI :8025<br/>[External Email System]"]
+
+    %% Inbound Flows
+    GW -- "1. HTTP/REST (JWT)" --> MW --> CTRL
+    PUB_DIET -- "AMQP Publish" --> MQ
+    PUB_CONSULT -- "AMQP Publish" --> MQ
+    MQ -- "2. AMQP Consume (Async)" --> CONSUMER
+
+    %% Onion Dependencies (Outer -> Inner ONLY)
+    CTRL --> ISVC
+    CONSUMER -- "CreateScope()" --> ISVC
+    SVC -. "implements" .-> ISVC
+    SVC --> IEMAIL
+    SVC --> ILOG_REPO
+    SVC --> IPREF_REPO
+    SVC --> IUOW
+    SVC --> ENT_LOG
+    SVC --> ENT_PREF
+
+    SMTP -. "implements" .-> IEMAIL
+    LOG_REPO -. "implements" .-> ILOG_REPO
+    PREF_REPO -. "implements" .-> IPREF_REPO
+    UOW -. "implements" .-> IUOW
+
+    LOG_REPO --> CTX
+    PREF_REPO --> CTX
+    UOW --> CTX
+    CTX --> ENT_LOG
+    CTX --> ENT_PREF
+    ENT_LOG --> ENUMS
+
+    %% Outbound Infrastructure Calls
+    SMTP -- "SMTP (:1025)" --> MAIL
+    CTX -- "EF Core / Npgsql (snake_case)" --> DB
+

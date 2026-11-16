@@ -198,6 +198,22 @@ public class MealLogRepository : GenericRepository<MealLog>, IMealLogRepository
                            .ToListAsync();
     }
 
+    public async Task<List<MealLog>> GetUserMealsInRangeAsync(Guid userId, DateTime startUtc, DateTime endUtc)
+    {
+        return await _dbSet.Include(m => m.FoodItems)
+                           .Where(m => m.UserId == userId && m.LoggedAt >= startUtc && m.LoggedAt < endUtc)
+                           .OrderBy(m => m.LoggedAt)
+                           .ToListAsync();
+    }
+
+    public async Task<double> GetUserTotalCaloriesForDateAsync(Guid userId, DateTime date)
+    {
+        var start = date.Date;
+        var end = start.AddDays(1);
+        return await _dbSet.Where(m => m.UserId == userId && m.LoggedAt >= start && m.LoggedAt < end)
+                           .SumAsync(m => m.TotalCalories);
+    }
+
     public async Task<MealLog?> GetWithItemsAsync(Guid mealLogId)
     {
         return await _dbSet.Include(m => m.FoodItems)
@@ -212,6 +228,14 @@ public class FastingSessionRepository : GenericRepository<FastingSession>, IFast
     public async Task<FastingSession?> GetActiveSessionAsync(Guid userId)
     {
         return await _dbSet.FirstOrDefaultAsync(s => s.UserId == userId && s.Status == FastingStatus.InProgress);
+    }
+
+    public async Task<List<FastingSession>> GetHistoryAsync(Guid userId, int limit)
+    {
+        return await _dbSet.Where(s => s.UserId == userId && s.Status != FastingStatus.InProgress)
+                           .OrderByDescending(s => s.StartTimeUtc)
+                           .Take(limit)
+                           .ToListAsync();
     }
 
     public async Task<List<FastingSession>> GetCompletedSessionsAsync(Guid userId)
@@ -235,5 +259,55 @@ public class FmdCycleRepository : GenericRepository<FmdCycle>, IFmdCycleReposito
     {
         return await _dbSet.CountAsync(c => c.UserId == userId);
     }
+
+    public async Task<List<FmdCycle>> GetAllActiveCyclesAsync()
+    {
+        return await _dbSet.Where(c => c.Status == FmdStatus.Active).ToListAsync();
+    }
 }
 
+public class FmdRuleRepository : GenericRepository<FmdRule>, IFmdRuleRepository
+{
+    public FmdRuleRepository(DietDbContext context) : base(context) { }
+
+    public async Task<FmdRule?> GetRuleByDayAsync(int dayNumber)
+    {
+        return await _dbSet.FirstOrDefaultAsync(r => r.DayNumber == dayNumber);
+    }
+
+    public async Task<List<FmdRule>> GetAllRulesAsync()
+    {
+        return await _dbSet.OrderBy(r => r.DayNumber).ToListAsync();
+    }
+}
+
+public class MealTemplateRepository : GenericRepository<MealTemplate>, IMealTemplateRepository
+{
+    public MealTemplateRepository(DietDbContext context) : base(context) { }
+
+    public async Task<List<MealTemplate>> GetTemplatesAsync(bool adminOnly = false)
+    {
+        var query = _dbSet.AsNoTracking();
+        if (adminOnly) query = query.Where(t => t.IsAdminTemplate);
+        return await query.OrderBy(t => t.Name).ToListAsync();
+    }
+}
+
+
+
+public class HabitLogRepository : GenericRepository<HabitLog>, IHabitLogRepository
+{
+    public HabitLogRepository(DietDbContext context) : base(context) { }
+
+    public async Task<HabitLog?> GetByUserAndDateAsync(Guid userId, DateOnly date)
+    {
+        return await _dbSet.FirstOrDefaultAsync(h => h.UserId == userId && h.LogDate == date);
+    }
+
+    public async Task<List<HabitLog>> GetRangeAsync(Guid userId, DateOnly from, DateOnly to)
+    {
+        return await _dbSet.Where(h => h.UserId == userId && h.LogDate >= from && h.LogDate <= to)
+                           .OrderBy(h => h.LogDate)
+                           .ToListAsync();
+    }
+}

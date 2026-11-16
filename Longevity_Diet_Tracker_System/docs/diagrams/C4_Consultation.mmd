@@ -1,0 +1,148 @@
+%% [C4] Code / Class Diagram – Consultation Service (Rich Domain Model & Onion Architecture)
+%% Author: Dương Đình Khôi (Domain 2: Consultation Service). Đối chiếu tên với code bởi Kiệt (16/11/2026).
+classDiagram
+    class BaseEntity {
+        <<abstract>>
+        +Guid Id
+        +DateTime? CreatedAt
+        +DateTime? UpdatedAt
+    }
+
+    class NutritionistProfile {
+        +Guid UserId
+        +string FullName
+        +string Certification
+        +string Specialization
+        +string Bio
+        +bool IsVerified
+        +ICollection~ConsultationSession~ Sessions
+        +Verify() void
+    }
+
+    class ConsultationSession {
+        +Guid UserId
+        +Guid NutritionistId
+        +DateTime ScheduledAtUtc
+        +int DurationMinutes
+        +ConsultationStatus Status
+        +string? Notes
+        +NutritionistProfile? Nutritionist
+        +AdviceNote? AdviceNote
+        +Schedule(userId, nutritionistId, scheduledAt, durationMinutes, notes)$ ConsultationSession
+        +Confirm() void
+        +Complete() void
+        +Cancel(reason) void
+        +AttachAdvice(advice) void
+    }
+
+    class AdviceNote {
+        +Guid ConsultationSessionId
+        +Guid UserId
+        +Guid NutritionistId
+        +string AdviceSummary
+        +string DietaryRecommendations
+        +string FastingRecommendations
+        +ConsultationSession? ConsultationSession
+        +Create(sessionId, userId, nutritionistId, summary, dietary, fasting)$ AdviceNote
+    }
+
+    class ConsultationStatus {
+        <<enumeration>>
+        Pending = 1
+        Confirmed = 2
+        Completed = 3
+        Cancelled = 4
+    }
+
+    class ConsultationCaller {
+        <<record struct>>
+        +Guid UserId
+        +bool IsAdmin
+    }
+
+    class IConsultationService {
+        <<interface>>
+        +GetNutritionistsAsync() Task~List~NutritionistProfileDto~~
+        +GetNutritionistByIdAsync(id) Task~NutritionistProfileDto~
+        +BookSessionAsync(dto) Task~ConsultationSessionDto~
+        +GetUserSessionsAsync(userId) Task~List~ConsultationSessionDto~~
+        +GetNutritionistSessionsAsync(nutritionistId, caller) Task~List~ConsultationSessionDto~~
+        +SendAdviceAsync(dto, caller) Task~AdviceNoteDto~
+        +GetUserAdvicesAsync(userId) Task~List~AdviceNoteDto~~
+        +ReviewUserDietProgressAsync(caller, userId) Task~UserHealthReviewDto~
+    }
+
+    class ConsultationService {
+        -IConsultationSessionRepository _sessionRepository
+        -INutritionistProfileRepository _nutritionistRepository
+        -IAdviceNoteRepository _adviceRepository
+        -IUnitOfWork _unitOfWork
+        -IDietFastingGrpcClientService _dietFastingGrpcClient
+        -IEventBus? _eventBus
+        -RequireOwnProfileUnlessAdminAsync(caller) Task~NutritionistProfile?~
+    }
+
+    class IDietFastingGrpcClientService {
+        <<interface>>
+        +GetUserFastingSummaryAsync(userId, ct) Task~FastingSummaryContract~
+        +GetUserNutritionSummaryAsync(userId, startDate, endDate, ct) Task~NutritionSummaryContract~
+        +GetActiveFmdCycleAsync(userId, ct) Task~FmdCycleStatusContract~
+    }
+
+    class DietFastingGrpcClient {
+        -string _grpcUrl
+        -ILogger _logger
+        +GetUserFastingSummaryAsync(userId, ct) Task~FastingSummaryContract~
+        +GetUserNutritionSummaryAsync(userId, startDate, endDate, ct) Task~NutritionSummaryContract~
+        +GetActiveFmdCycleAsync(userId, ct) Task~FmdCycleStatusContract~
+    }
+
+    class IEventBus {
+        <<interface>>
+        +PublishAsync(event, ct) Task
+    }
+
+    class RabbitMqConsultationPublisher {
+        +PublishAsync(event, ct) Task
+    }
+
+    class INutritionistProfileRepository {
+        <<interface>>
+        +GetByUserIdAsync(userId) Task~NutritionistProfile?~
+        +GetVerifiedNutritionistsAsync() Task~List~NutritionistProfile~~
+    }
+
+    class IConsultationSessionRepository {
+        <<interface>>
+        +GetByNutritionistIdAsync(nutritionistId) Task~List~ConsultationSession~~
+        +GetByUserIdAsync(userId) Task~List~ConsultationSession~~
+        +GetWithAdviceAsync(sessionId) Task~ConsultationSession?~
+    }
+
+    class IAdviceNoteRepository {
+        <<interface>>
+        +GetByUserIdAsync(userId) Task~List~AdviceNote~~
+        +GetBySessionIdAsync(sessionId) Task~AdviceNote?~
+    }
+
+    BaseEntity <|-- NutritionistProfile
+    BaseEntity <|-- ConsultationSession
+    BaseEntity <|-- AdviceNote
+
+    NutritionistProfile "1" --> "*" ConsultationSession : Sessions
+    ConsultationSession "1" --> "0..1" AdviceNote : AdviceNote
+    ConsultationSession --> ConsultationStatus : Status
+
+    IConsultationService <|.. ConsultationService : implements
+    IDietFastingGrpcClientService <|.. DietFastingGrpcClient : implements
+    IEventBus <|.. RabbitMqConsultationPublisher : implements
+
+    ConsultationService --> INutritionistProfileRepository
+    ConsultationService --> IConsultationSessionRepository
+    ConsultationService --> IAdviceNoteRepository
+    ConsultationService --> IDietFastingGrpcClientService
+    ConsultationService --> IEventBus
+    ConsultationService ..> ConsultationCaller : uses
+
+    note for ConsultationSession "UserId tham chiếu identity_db, KHÔNG có Foreign Key (Database-per-Service, AGENT.md Warning 2)"
+    note for NutritionistProfile "UserId nối tài khoản đăng nhập (JWT) với hồ sơ bác sĩ; dùng để phân quyền"

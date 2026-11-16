@@ -11,6 +11,9 @@ public class NutritionistProfileConfiguration : IEntityTypeConfiguration<Nutriti
         builder.ToTable("nutritionist_profiles");
         builder.HasKey(n => n.Id);
         builder.HasIndex(n => n.UserId).IsUnique();
+        builder.Property(n => n.Tags).HasMaxLength(200).IsRequired();
+        builder.Property(n => n.AvatarUrl).HasMaxLength(500);
+        builder.Ignore(n => n.TagList);
     }
 }
 
@@ -20,6 +23,7 @@ public class ConsultationSessionConfiguration : IEntityTypeConfiguration<Consult
     {
         builder.ToTable("consultation_sessions");
         builder.HasKey(s => s.Id);
+        builder.Property(s => s.UserEmail).HasMaxLength(256);
         builder.HasIndex(s => new { s.NutritionistId, s.ScheduledAtUtc });
 
         builder.HasOne(s => s.Nutritionist)

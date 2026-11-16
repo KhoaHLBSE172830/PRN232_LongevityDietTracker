@@ -4,7 +4,6 @@ using Notification.Application.DTOs;
 using Notification.Application.Repositories;
 using Notification.Domain.Entities;
 using Notification.Domain.Enums;
-using Notification.Domain.Exceptions;
 
 namespace Notification.Application.Services;
 
@@ -32,30 +31,48 @@ public class NotificationService : INotificationService
 
     public async Task<NotificationLogResponse> SendAndLogNotificationAsync(SendNotificationRequest request, CancellationToken cancellationToken = default)
     {
-        var log = new NotificationLog
+        // AGENT.md Warning 5: Idempotency check for event-driven messages
+        if (!string.IsNullOrEmpty(request.EventId))
         {
-            UserId = request.UserId,
-            Recipient = request.Recipient,
-            Subject = request.Subject,
-            Body = request.Body,
-            Channel = request.Channel,
-            Status = NotificationStatus.Pending
-        };
+            var alreadyProcessed = await _logRepository.HasEventBeenProcessedAsync(request.EventId, cancellationToken);
+            if (alreadyProcessed)
+            {
+                _logger.LogInformation("Event '{EventId}' has already been processed. Skipping to guarantee Idempotency.", request.EventId);
+                var existingLogs = await _logRepository.GetLogsByUserIdAsync(request.UserId, 50, cancellationToken);
+                var existing = existingLogs.FirstOrDefault(l => l.EventId == request.EventId);
+                if (existing != null) return MapToResponse(existing);
+            }
+        }
 
-        if (request.Channel == NotificationChannel.Email)
+        // Check user notification preferences (PLAN_ASSIGNMENT.md 10.7)
+        var preference = await _preferenceRepository.GetByUserIdAsync(request.UserId, cancellationToken);
+        var emailAllowed = preference?.EmailNotificationsEnabled ?? true;
+
+        var log = new NotificationLog(
+            request.UserId,
+            request.Recipient,
+            request.Subject,
+            request.Body,
+            request.Channel,
+            request.EventId);
+
+        if (request.Channel == NotificationChannel.Email && emailAllowed)
         {
             try
             {
                 await _emailService.SendEmailAsync(request.Recipient, request.Subject, request.Body, cancellationToken);
-                log.Status = NotificationStatus.Sent;
-                log.SentAtUtc = DateTime.UtcNow;
+                log.MarkAsSent();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send email to {Recipient}", request.Recipient);
-                log.Status = NotificationStatus.Failed;
-                log.ErrorMessage = ex.Message;
+                log.MarkAsFailed(ex.Message);
             }
+        }
+        else
+        {
+            // InApp / Push or Email disabled by user preference: record notification in history as Sent
+            log.MarkAsSent();
         }
 
         await _logRepository.CreateAsync(log);
@@ -68,6 +85,37 @@ public class NotificationService : INotificationService
     {
         var logs = await _logRepository.GetLogsByUserIdAsync(userId, 50, cancellationToken);
         return logs.Select(MapToResponse).ToList();
+    }
+
+    public async Task<int> GetUnreadCountAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return (await _logRepository.GetUnreadByUserIdAsync(userId, cancellationToken)).Count;
+    }
+
+    public async Task<NotificationLogResponse> MarkAsReadAsync(Guid notificationId, Guid requesterUserId, bool isAdmin, CancellationToken cancellationToken = default)
+    {
+        var log = await _logRepository.FindByIdAsync(notificationId)
+            ?? throw new Domain.Exceptions.NotificationNotFoundException(notificationId);
+        if (!isAdmin && log.UserId != requesterUserId)
+            throw new BuildingBlocks.Common.Exceptions.ForbiddenException("Bạn chỉ được đánh dấu đã đọc thông báo của chính mình.");
+
+        log.MarkAsRead();
+        await _logRepository.UpdateAsync(log);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapToResponse(log);
+    }
+
+    public async Task<int> MarkAllAsReadAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var unread = await _logRepository.GetUnreadByUserIdAsync(userId, cancellationToken);
+        foreach (var log in unread)
+        {
+            log.MarkAsRead();
+            await _logRepository.UpdateAsync(log);
+        }
+        if (unread.Count > 0)
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return unread.Count;
     }
 
     public async Task<NotificationPreferenceDto> GetUserPreferenceAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -110,10 +158,10 @@ public class NotificationService : INotificationService
         }
         else
         {
-            pref.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
-            pref.FastingRemindersEnabled = request.FastingRemindersEnabled;
-            pref.NutritionistAdviceAlertsEnabled = request.NutritionistAdviceAlertsEnabled;
-            pref.UpdatedAt = DateTime.UtcNow;
+            pref.UpdatePreferences(
+                request.EmailNotificationsEnabled,
+                request.FastingRemindersEnabled,
+                request.NutritionistAdviceAlertsEnabled);
             await _preferenceRepository.UpdateAsync(pref);
         }
 
@@ -139,6 +187,9 @@ public class NotificationService : INotificationService
             log.Status,
             log.SentAtUtc,
             log.ErrorMessage,
-            log.CreatedAt);
+            log.EventId,
+            log.CreatedAt,
+            log.ReadAtUtc,
+            log.IsRead);
     }
 }

@@ -1,0 +1,86 @@
+%% [C4] Code / Class Diagram – DietFasting.Domain (Part B: Fasting & 5-Day FMD Cycle)
+%% Author: Trần Phạm Khánh Quốc (Branch: quoc)
+classDiagram
+    class BaseEntity {
+        <<abstract>>
+        +Guid Id
+        +DateTime? CreatedAt
+        +DateTime? UpdatedAt
+    }
+
+    class FastingSession {
+        +Guid UserId
+        +FastingType FastingType
+        +DateTime StartTimeUtc
+        +DateTime TargetEndTimeUtc
+        +DateTime? ActualEndTimeUtc
+        +FastingStatus Status
+        +string? MoodNotes
+        +string? NotificationEmail
+        +double TargetHours
+        +double? ActualFastedHours
+        +Create(Guid userId, FastingType type, DateTime startTime, double durationHours, string? notificationEmail)$ FastingSession
+        +Complete(DateTime actualEndTime, string? notes) void
+        +Cancel(string? reason) void
+    }
+
+    class FmdCycle {
+        +Guid UserId
+        +int CycleNumber
+        +DateTime StartDate
+        +DateTime EndDate
+        +int CurrentDay
+        +FmdStatus Status
+        +double TargetCaloriesDay1
+        +double TargetCaloriesDays2To5
+        +Create(Guid userId, int cycleNumber, DateTime startDate)$ FmdCycle
+        +AdvanceDay() void
+        +CheckThreshold(double totalCaloriesToday) ValueTuple~bool, string?~
+        +Complete() void
+        +Cancel() void
+    }
+
+    class FmdRule {
+        +int DayNumber
+        +double MaxCalories
+        +double TargetProteinPercent
+        +double TargetFatPercent
+        +double TargetCarbPercent
+        +string Description
+        +UpdateRule(double maxCalories, double proteinPct, double fatPct, double carbPct, string description) void
+    }
+
+    class FastingType {
+        <<enumeration>>
+        Circadian = 1
+        Intermittent16_8 = 2
+        Intermittent18_6 = 3
+        Intermittent20_4 = 4
+        Extended = 5
+        FmdProtocol = 6
+    }
+
+    class FastingStatus {
+        <<enumeration>>
+        InProgress = 1
+        Completed = 2
+        Cancelled = 3
+    }
+
+    class FmdStatus {
+        <<enumeration>>
+        Planned = 1
+        Active = 2
+        Completed = 3
+        Cancelled = 4
+    }
+
+    BaseEntity <|-- FastingSession
+    BaseEntity <|-- FmdCycle
+    BaseEntity <|-- FmdRule
+    FastingSession --> FastingType
+    FastingSession --> FastingStatus
+    FmdCycle --> FmdStatus
+    FmdCycle ..> FmdRule : validates DayNumber (1..5)
+    note for FmdCycle "Invariant 4.1: Ngày 1 <= 1100 kcal, Ngày 2-5 <= 725 kcal.\nUnique Index đảm bảo mỗi User chỉ có tối đa 1 phiên InProgress/Active."
+

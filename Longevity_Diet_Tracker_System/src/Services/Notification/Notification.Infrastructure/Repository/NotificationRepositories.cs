@@ -197,6 +197,19 @@ public class NotificationLogRepository : GenericRepository<NotificationLog>, INo
             .Take(limit)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<NotificationLog>> GetUnreadByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _context.NotificationLogs
+            .Where(n => n.UserId == userId && n.ReadAtUtc == null)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> HasEventBeenProcessedAsync(string eventId, CancellationToken cancellationToken = default)
+    {
+        return await _context.NotificationLogs
+            .AnyAsync(n => n.EventId == eventId, cancellationToken);
+    }
 }
 
 public class NotificationPreferenceRepository : GenericRepository<NotificationPreference>, INotificationPreferenceRepository

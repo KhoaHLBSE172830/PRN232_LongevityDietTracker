@@ -27,4 +27,39 @@ public class User : BaseEntity
         GoogleId = googleId;
         IsEmailVerified = !string.IsNullOrEmpty(googleId);
     }
+
+    public void AddRefreshToken(string token, string jwtId, DateTime expiresAt)
+    {
+        RefreshTokens.Add(new RefreshToken
+        {
+            UserId = Id,
+            Token = token,
+            JwtId = jwtId,
+            ExpiresAtUtc = expiresAt
+        });
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void RevokeRefreshToken(string token)
+    {
+        var existing = RefreshTokens.FirstOrDefault(r => r.Token == token);
+        if (existing != null)
+        {
+            existing.IsRevoked = true;
+            existing.UpdatedAt = DateTime.UtcNow;
+            UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    public void VerifyEmail()
+    {
+        IsEmailVerified = true;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

@@ -1,9 +1,13 @@
 using BuildingBlocks.Common.Repositories;
+using BuildingBlocks.Messaging.Abstractions;
 using Identity.Application.Repositories;
+using Identity.Application.Security;
 using Identity.Application.Services;
 using Identity.Infrastructure.Core.Auth;
 using Identity.Infrastructure.Core.JWT;
+using Identity.Infrastructure.Core.Security;
 using Identity.Infrastructure.Database;
+using Identity.Infrastructure.Messaging;
 using Identity.Infrastructure.Repository;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -20,7 +24,8 @@ public static class DependencyInjection
 
         services.AddDbContext<IdentityDbContext>(options =>
         {
-            options.UseNpgsql(connectionString);
+            // AGENT.md 3.2: snake_case naming convention
+            options.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
         });
 
         // Repositories & Unit of Work
@@ -29,10 +34,12 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Core Infrastructure Services
+        services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<IGoogleAuthService, GoogleAuthService>();
+        services.AddScoped<IIdentityDataSeeder, IdentityDataSeeder>();
+        services.AddSingleton<IEventBus, RabbitMqIdentityPublisher>();
 
         return services;
     }
 }
-

@@ -15,7 +15,8 @@ public enum FastingType
     Intermittent18_6 = 3,    // 18:6
     Intermittent20_4 = 4,    // 20:4
     Extended = 5,           // 24h+
-    FmdProtocol = 6         // 5-day Fasting Mimicking Diet
+    FmdProtocol = 6,        // 5-day Fasting Mimicking Diet
+    Intermittent14_10 = 7   // 14:10
 }
 
 public enum FastingStatus

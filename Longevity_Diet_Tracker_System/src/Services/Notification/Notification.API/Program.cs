@@ -1,10 +1,22 @@
+using System.Text;
 using BuildingBlocks.Common.Filters;
 using BuildingBlocks.Common.Middlewares;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Notification.Application;
 using Notification.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Standard port 5004 (AGENT.md 1.2, README.md, YarpGateway appsettings.json)
+var httpPort = builder.Configuration.GetValue("Ports:Http", 5004);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(httpPort, listen => listen.Protocols = HttpProtocols.Http1);
+});
 
 // Add Controllers with Global ValidationFilter like Mimo
 builder.Services.AddControllers(options =>
@@ -17,12 +29,61 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.SuppressModelStateInvalidFilter = true;
 });
 
+// AGENT.md 4.3: RBAC & JWT Authentication
+var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "super_secret_jwt_key_longevity_diet_tracker_32chars!";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "LongevityIdentityService";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "LongevityDietTrackerClients";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        RoleClaimType = System.Security.Claims.ClaimTypes.Role,
+        NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
+    };
+});
+
+builder.Services.AddAuthorization();
+
 // Register Onion Architecture layers
 builder.Services.AddNotificationApplicationServices();
 builder.Services.AddNotificationInfrastructureServices(builder.Configuration);
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Notification Service", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 var app = builder.Build();
 
@@ -35,6 +96,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Notification Service v1"));
 }
 
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 

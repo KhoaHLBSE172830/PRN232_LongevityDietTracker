@@ -9,8 +9,12 @@ public static class DependencyInjection
     {
         services.AddScoped<IMealService, MealService>();
         services.AddScoped<IFastingService, FastingService>();
+        services.AddScoped<IFastingReminderService, FastingReminderService>();
         services.AddScoped<IFmdService, FmdService>();
+        services.AddScoped<IFmdRuleService, FmdRuleService>();
+        services.AddScoped<IMealTemplateService, MealTemplateService>();
+        services.AddScoped<IHabitService, HabitService>();
+
         return services;
     }
 }
-
