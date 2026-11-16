@@ -13,11 +13,18 @@ import FastingView from './features/fasting/FastingView';
 import FmdView from './features/fmd/FmdView';
 import ConsultationView from './features/consultation/ConsultationView';
 import ProfileView from './features/auth/ProfileView';
+import AdminDashboard from './features/admin/AdminDashboard';
+import FmdRulesAdmin from './features/admin/FmdRulesAdmin';
+import MealTemplatesAdmin from './features/admin/MealTemplatesAdmin';
+import UsersRolesAdmin from './features/admin/UsersRolesAdmin';
+import NotifyAdmin from './features/admin/NotifyAdmin';
+import { currentRole, portalFor, defaultTab, canAccessTab, roleLabel } from './app/roles';
+import { ADMIN_MENU } from './app/menus';
 
 export default function App() {
   // 'landing' (Trang chủ công khai giới thiệu) | 'dashboard' (Không gian làm việc bên trong)
   const [viewMode, setViewMode] = useState(() => (hasStoredUser() ? 'dashboard' : 'landing'));
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'meals' | 'fasting' | 'fmd' | 'consultation' | 'profile'
+  const [activeTab, setActiveTab] = useState(() => defaultTab(currentRole())); // hội viên: overview | meals | fasting | fmd | consultation | profile; admin: admin-*
   const [isAddMealModalOpen, setIsAddMealModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [toast, setToast] = useState(null);
@@ -54,7 +61,7 @@ export default function App() {
   const handleLoginSuccess = (user, { demo = false } = {}) => {
     setCurrentUser(user);
     setViewMode('dashboard');
-    setActiveTab('overview');
+    setActiveTab(defaultTab(currentRole()));
     showToast({
       type: 'success',
       title: demo ? 'Đã vào chế độ demo' : 'Đăng nhập thành công',
@@ -79,6 +86,11 @@ export default function App() {
     window.addEventListener('auth:unauthorized', onUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
   }, []);
+
+  const role = currentRole();
+  const portal = portalFor(role);
+  // Tab không thuộc portal của role hiện tại (vd. vừa đổi tài khoản) thì quay về tab mặc định.
+  const tab = canAccessTab(role, activeTab) ? activeTab : defaultTab(role);
 
   // 1. GIAO DIỆN TRANG CHỦ CÔNG KHAI (LANDING PAGE)
   if (viewMode === 'landing') {
@@ -105,8 +117,12 @@ export default function App() {
     <div className="flex min-h-screen bg-slate-50 font-sans selection:bg-emerald-100 selection:text-emerald-900">
       {/* Sidebar bên trái */}
       <Sidebar
-        activeTab={activeTab}
+        activeTab={tab}
         onSelectTab={setActiveTab}
+        menuItems={portal === 'admin' ? ADMIN_MENU : null}
+        portalTitle={portal === 'admin' ? 'Khu vực quản trị' : 'Không gian sức khỏe'}
+        portalSubtitle={portal === 'admin' ? 'Cấu hình và giám sát hệ thống' : 'Quản lý và theo dõi hằng ngày'}
+        roleLabel={role !== 'User' ? roleLabel(role) : null}
         onBackToLanding={() => setViewMode('landing')}
         onLogout={handleLogout}
         isCollapsed={isSidebarCollapsed}
@@ -120,6 +136,8 @@ export default function App() {
             setActiveTab('meals');
             setIsAddMealModalOpen(true);
           }}
+          portal={portal}
+          roleLabel={roleLabel(role)}
           onBackToLanding={() => setViewMode('landing')}
           onLogout={handleLogout}
           onNavigate={setActiveTab}
@@ -128,7 +146,17 @@ export default function App() {
         />
 
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
-          {activeTab === 'overview' && (
+          {portal === 'admin' && (
+            <>
+              {tab === 'admin-overview' && <AdminDashboard onNavigate={setActiveTab} />}
+              {tab === 'admin-fmd' && <FmdRulesAdmin />}
+              {tab === 'admin-templates' && <MealTemplatesAdmin />}
+              {tab === 'admin-users' && <UsersRolesAdmin />}
+              {tab === 'admin-notify' && <NotifyAdmin />}
+            </>
+          )}
+
+          {portal === 'user' && tab === 'overview' && (
             <OverviewDashboard
               onNavigate={setActiveTab}
               onOpenAddMeal={() => {
@@ -138,7 +166,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'meals' && (
+          {portal === 'user' && tab === 'meals' && (
             <MealsView
               isAddModalOpen={isAddMealModalOpen}
               onOpenAddModal={() => setIsAddMealModalOpen(true)}
@@ -147,13 +175,13 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'fasting' && <FastingView />}
+          {portal === 'user' && tab === 'fasting' && <FastingView />}
 
-          {activeTab === 'fmd' && <FmdView />}
+          {portal === 'user' && tab === 'fmd' && <FmdView />}
 
-          {activeTab === 'consultation' && <ConsultationView />}
+          {portal === 'user' && tab === 'consultation' && <ConsultationView />}
 
-          {activeTab === 'profile' && <ProfileView />}
+          {portal === 'user' && tab === 'profile' && <ProfileView />}
         </main>
       </div>
 

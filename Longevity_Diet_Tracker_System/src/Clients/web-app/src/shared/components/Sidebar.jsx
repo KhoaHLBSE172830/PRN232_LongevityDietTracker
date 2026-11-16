@@ -21,10 +21,14 @@ export default function Sidebar({
   onLogout,
   isCollapsed = false,
   onToggleCollapse,
+  menuItems: customMenu = null,
+  portalTitle = 'Không gian sức khỏe',
+  portalSubtitle = 'Quản lý và theo dõi hằng ngày',
+  roleLabel = null,
 }) {
   const user = useCurrentUser();
 
-  const menuItems = [
+  const defaultMenu = [
     {
       id: 'overview',
       label: 'Tổng quan',
@@ -56,6 +60,7 @@ export default function Sidebar({
       icon: UserCircle2,
     },
   ];
+  const menuItems = customMenu || defaultMenu;
 
   return (
     <aside
@@ -224,7 +229,7 @@ export default function Sidebar({
                 text-[#718675]
               "
             >
-              Không gian sức khỏe
+              {portalTitle}
             </p>
 
             <p
@@ -233,7 +238,7 @@ export default function Sidebar({
                 font-medium text-[#718675]
               "
             >
-              Quản lý và theo dõi hằng ngày
+              {portalSubtitle}
             </p>
           </div>
         )}
@@ -402,7 +407,7 @@ export default function Sidebar({
         {isCollapsed ? (
           <div
             className="relative cursor-pointer group"
-            title={`${user.name} (${user.tier})`}
+            title={`${user.name} (${roleLabel || user.tier})`}
           >
             <img
               src={user.avatar}
@@ -472,7 +477,7 @@ export default function Sidebar({
                   font-medium text-[#718675]
                 "
               >
-                {user.tier}
+                {roleLabel || user.tier}
               </p>
             </div>
 
